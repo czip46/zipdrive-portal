@@ -1519,9 +1519,10 @@ border:`1px solid ${C.red}44`, borderRadius:20, padding:“3px 10px” }}>
 }
 
 // JobsList
-function JobsList({ jobs, setJobs, driversList=INITIAL_DRIVERS }) {
+function JobsList({ jobs, setJobs, driversList=INITIAL_DRIVERS, archivedJobs=[], setArchivedJobs }) {
 const [filter,setFilter]=useState(“All”);
 const [sel,setSel]=useState(null);
+const [confirmClear, setConfirmClear]=useState(false);
 const filtered=filter===“All”?jobs:jobs.filter(j=>j.status===filter);
 const cur = sel ? (() => {
 const j = jobs.find(j => j.id === sel.id);
@@ -1535,6 +1536,24 @@ setJobs(prev=>prev.map(j=>j.id===id?{…j,…patch,notifications:[…(j.notifica
 if(patch._note) delete patch._note;
 }
 
+function archiveJob(job) {
+const archived = { …job, archivedAt: new Date().toLocaleDateString(), notifications:[…(job.notifications||[]),“Job archived”] };
+setArchivedJobs(prev=>[archived,…prev]);
+setJobs(prev=>prev.filter(j=>j.id!==job.id));
+setSel(null);
+}
+
+function clearCompleted() {
+const completed = jobs.filter(j=>j.status===“Completed”);
+const ts = new Date().toLocaleDateString();
+setArchivedJobs(prev=>[…completed.map(j=>({…j,archivedAt:ts,notifications:[…(j.notifications||[]),“Archived with batch clear”]})),…prev]);
+setJobs(prev=>prev.filter(j=>j.status!==“Completed”));
+setConfirmClear(false);
+setSel(null);
+}
+
+const completedCount = jobs.filter(j=>j.status===“Completed”).length;
+
 return (
 <div style={{ padding:“32px 36px”, maxWidth:1200 }}>
 <div style={{ marginBottom:24, display:“flex”, alignItems:“flex-end”, justifyContent:“space-between”, flexWrap:“wrap”, gap:12 }}>
@@ -1542,6 +1561,18 @@ return (
 <div style={{ fontSize:11, color:C.gray, textTransform:“uppercase”, letterSpacing:“0.12em”, marginBottom:6 }}>{filtered.length} jobs</div>
 <h1 style={{ margin:0, fontSize:30, fontWeight:900, color:C.white, fontFamily:”‘Bebas Neue’, sans-serif”, letterSpacing:“0.04em” }}>ALL JOBS</h1>
 </div>
+<div style={{ display:“flex”, gap:8, flexWrap:“wrap”, alignItems:“center” }}>
+{completedCount > 0 && (
+confirmClear ? (
+<div style={{ display:“flex”, gap:6, alignItems:“center”, padding:“6px 12px”, background:`${C.red}22`, borderRadius:10, border:`1px solid ${C.red}44` }}>
+<span style={{ fontSize:11, color:C.red }}>Archive {completedCount} completed?</span>
+<Btn small variant="danger" onClick={clearCompleted}>Yes, Archive</Btn>
+<Btn small variant=“secondary” onClick={()=>setConfirmClear(false)}>Cancel</Btn>
+</div>
+) : (
+<Btn small variant=“amber” onClick={()=>setConfirmClear(true)}>🗂 Archive Completed ({completedCount})</Btn>
+)
+)}
 <div style={{ display:“flex”, gap:6, flexWrap:“wrap” }}>
 {[“All”,“Pending”,“In Progress”,“Completed”,“On Hold”,“Cancelled”].map(s=>(
 <button key={s} onClick={()=>setFilter(s)} style={{
@@ -1549,6 +1580,7 @@ padding:“7px 14px”, borderRadius:20, border:`1px solid ${filter===s?C.accent
 background:filter===s?C.accent:“transparent”, color:filter===s?”#fff”:C.gray,
 fontSize:11, fontWeight:700, cursor:“pointer”, textTransform:“uppercase”, letterSpacing:“0.05em” }}>{s}</button>
 ))}
+</div>
 </div>
 </div>
 <div style={{ display:“grid”, gridTemplateColumns:cur?“1fr 400px”:“1fr”, gap:20 }}>
@@ -1652,6 +1684,14 @@ color:C.blue, fontSize:12, fontWeight:700, textDecoration:“none” }}>
 <Btn small variant=“ghost” onClick={()=>update(cur.id,{paymentStatus:“Invoiced”,_note:“Invoice sent to client”})}>📧 Send Invoice</Btn>
 <Btn small variant=“success” onClick={()=>update(cur.id,{paymentStatus:“Paid”,_note:“Payment received”})}>✓ Mark Paid</Btn>
 </div>
+</div>
+<HR/>
+<div>
+<FieldLabel>Archive / Remove</FieldLabel>
+<div style={{ fontSize:11, color:C.gray, marginBottom:10 }}>
+Archived jobs are stored in the Archive tab for reference. They are removed from All Jobs but never permanently deleted.
+</div>
+<Btn small variant=“amber” onClick={()=>archiveJob(cur)}>🗂 Archive This Job</Btn>
 </div>
 </div>
 </div>
@@ -2111,6 +2151,7 @@ const nav = [
 { id:“invoices”, label:“Invoices”,    icon:“≡”  },
 { id:“client-login”,label:“Client Login”,icon:“🔑”},
 { id:“settings”, label:“Settings”,    icon:“⚙”  },
+{ id:“archive”,  label:“Archive”,     icon:“🗂”  },
 ];
 const pending=jobs.filter(j=>j.status===“Pending”).length;
 const inProg=jobs.filter(j=>j.status===“In Progress”).length;
@@ -2177,6 +2218,112 @@ insuranceCarrier:“National Liability & Fire Insurance Co.”, broker:“Mark G
 radiusLimit:150, maxDrivers:4,
 };
 
+// ─── Archive View ─────────────────────────────────────────────────────────────
+function ArchiveView({ archivedJobs=[], setArchivedJobs, setJobs }) {
+const [confirmClearAll, setConfirmClearAll] = useState(false);
+const [sel, setSel] = useState(null);
+
+function restoreJob(job) {
+const { archivedAt, …restored } = job;
+setJobs(prev => [{ …restored, notifications:[…(restored.notifications||[]),“Restored from archive”] }, …prev]);
+setArchivedJobs(prev => prev.filter(j => j.id !== job.id));
+setSel(null);
+}
+
+function deleteForever(jobId) {
+setArchivedJobs(prev => prev.filter(j => j.id !== jobId));
+setSel(null);
+}
+
+return (
+<div style={{ padding:“32px 36px”, maxWidth:1100 }}>
+<div style={{ marginBottom:28, display:“flex”, alignItems:“flex-end”, justifyContent:“space-between” }}>
+<div>
+<div style={{ fontSize:11, color:C.gray, textTransform:“uppercase”, letterSpacing:“0.12em”, marginBottom:6 }}>{archivedJobs.length} archived jobs</div>
+<h1 style={{ margin:0, fontSize:30, fontWeight:900, color:C.white, fontFamily:”‘Bebas Neue’, sans-serif”, letterSpacing:“0.04em” }}>ARCHIVE</h1>
+</div>
+{archivedJobs.length > 0 && (
+confirmClearAll ? (
+<div style={{ display:“flex”, gap:8, alignItems:“center”, padding:“8px 14px”, background:`${C.red}22`, borderRadius:10, border:`1px solid ${C.red}44` }}>
+<span style={{ fontSize:12, color:C.red }}>Permanently delete all?</span>
+<Btn small variant=“danger” onClick={()=>{ setArchivedJobs([]); setConfirmClearAll(false); setSel(null); }}>Delete All</Btn>
+<Btn small variant=“secondary” onClick={()=>setConfirmClearAll(false)}>Cancel</Btn>
+</div>
+) : (
+<Btn small variant=“danger” onClick={()=>setConfirmClearAll(true)}>🗑 Delete All Permanently</Btn>
+)
+)}
+</div>
+
+```
+  {archivedJobs.length === 0 && (
+    <Card style={{ textAlign:"center", padding:40 }}>
+      <div style={{ fontSize:32, marginBottom:12 }}>🗂</div>
+      <div style={{ fontSize:15, color:C.white, fontWeight:700 }}>Archive is empty</div>
+      <div style={{ fontSize:12, color:C.gray, marginTop:6 }}>Archived jobs will appear here. They can be restored or permanently deleted.</div>
+    </Card>
+  )}
+
+  <div style={{ display:"grid", gridTemplateColumns:sel?"1fr 360px":"1fr", gap:20 }}>
+    <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+      {archivedJobs.map(job => {
+        const s = STATUS_CFG[job.status] || STATUS_CFG["Completed"];
+        return (
+          <div key={job.id} onClick={()=>setSel(sel?.id===job.id?null:job)}
+            style={{ background:sel?.id===job.id?"#261040":"#1A0A2E",
+              border:`1px solid ${C.darkGray}`, borderLeft:`3px solid ${s.color}`,
+              borderRadius:12, padding:"12px 16px", display:"flex", alignItems:"center",
+              gap:16, cursor:"pointer", opacity:0.85 }}>
+            <div style={{ minWidth:68 }}>
+              <div style={{ fontSize:11, color:C.accent, fontWeight:800, fontFamily:"'Bebas Neue', sans-serif" }}>{job.id}</div>
+              <div style={{ fontSize:10, color:C.amber, marginTop:2 }}>Archived {job.archivedAt}</div>
+            </div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:13, color:C.white, fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{job.vehicle}</div>
+              <div style={{ fontSize:11, color:C.gray, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{job.client} · {job.pickup} → {job.destination}</div>
+            </div>
+            <div style={{ minWidth:60, textAlign:"right" }}>
+              <div style={{ fontSize:14, color:C.accentGlow, fontWeight:700 }}>${job.rate}</div>
+              <div style={{ fontSize:9, fontWeight:700, color:job.paymentStatus==="Paid"?C.green:C.gray }}>{job.paymentStatus}</div>
+            </div>
+            <Badge status={job.status}/>
+          </div>
+        );
+      })}
+    </div>
+
+    {sel && (
+      <Card style={{ height:"fit-content", position:"sticky", top:20 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", marginBottom:16 }}>
+          <div>
+            <div style={{ fontSize:18, fontWeight:900, color:C.accent, fontFamily:"'Bebas Neue', sans-serif" }}>{sel.id}</div>
+            <div style={{ fontSize:11, color:C.amber }}>Archived {sel.archivedAt}</div>
+          </div>
+          <button onClick={()=>setSel(null)} style={{ background:"none", border:"none", color:C.gray, cursor:"pointer", fontSize:18 }}>✕</button>
+        </div>
+        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+          {[["Vehicle",`${sel.vehicle} · ${sel.color}`],["Client",sel.client],["Pickup",sel.pickup],["Destination",sel.destination],["Driver",sel.driver||"Unassigned"],["Rate",`$${sel.rate}`,true],["Payment",sel.paymentStatus]].map(([l,v,hl])=>(
+            <div key={l}>
+              <FieldLabel>{l}</FieldLabel>
+              <div style={{ fontSize:hl?18:13, fontWeight:hl?800:500, color:hl?C.accentGlow:C.white }}>{v}</div>
+            </div>
+          ))}
+        </div>
+        <HR/>
+        <div style={{ display:"flex", flexDirection:"column", gap:8, marginTop:8 }}>
+          <Btn variant="ghost" onClick={()=>restoreJob(sel)}>↩ Restore to Active Jobs</Btn>
+          <Btn variant="danger" small onClick={()=>deleteForever(sel.id)}>🗑 Delete Permanently</Btn>
+          <div style={{ fontSize:10, color:C.gray, textAlign:"center" }}>Permanent deletion cannot be undone.</div>
+        </div>
+      </Card>
+    )}
+  </div>
+</div>
+```
+
+);
+}
+
 function App() {
 const [active,setActive]=useState(“dashboard”);
 const [jobs,setJobs]=useState(INITIAL_JOBS);
@@ -2184,6 +2331,7 @@ const [showNotif,setShowNotif]=useState(false);
 const [clientAccount,setClientAccount]=useState(null);
 const [settings,setSettings]=useState(DEFAULT_SETTINGS);
 const [driversList,setDriversList]=useState([“Curt Zipfel”,“Greg Wagner”,“Don Cowell”,“Jackie Zipfel”]);
+const [archivedJobs,setArchivedJobs]=useState([]);
 const [clientsList,setClientsList]=useState(Object.entries(CLIENT_ACCOUNTS).map(([name,acc])=>({name,…acc})));
 
 useEffect(()=>{
@@ -2209,7 +2357,7 @@ if(clientAccount&&active===“client-login”) return (
 
 const views = {
 dashboard: <Dashboard jobs={jobs} setActive={setActive}/>,
-jobs:      <JobsList  jobs={jobs} setJobs={setJobs} driversList={driversList}/>,
+jobs:      <JobsList  jobs={jobs} setJobs={setJobs} driversList={driversList} archivedJobs={archivedJobs} setArchivedJobs={setArchivedJobs}/>,
 newjob:    <NewJob    jobs={jobs} setJobs={setJobs} setActive={setActive} driversList={driversList}/>,
 quote:     <AIQuoteGenerator jobs={jobs} settings={settings}/>,
 driver:    <DriverMobileView jobs={jobs} setJobs={setJobs} driversList={driversList}/>,
@@ -2218,6 +2366,7 @@ drivers:   <DriversView jobs={jobs} driversList={driversList} setDriversList={se
 clients:   <ClientsView jobs={jobs}/>,
 invoices:  <InvoicesView jobs={jobs} setJobs={setJobs}/>,
 settings:  <Settings settings={settings} setSettings={setSettings} clientsList={clientsList} setClientsList={setClientsList} driversList={driversList} setDriversList={setDriversList}/>,
+archive:   <ArchiveView archivedJobs={archivedJobs} setArchivedJobs={setArchivedJobs} setJobs={setJobs}/>,
 };
 
 return (
@@ -2259,4 +2408,4 @@ try {
     });
   </script>
 </body>
-</html>
+</html>9
