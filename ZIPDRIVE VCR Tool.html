@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0">
+<title>ZIPDRIVE Vehicle Condition Report</title>
+<style>
+:root {
+  --purple: #5B2D8E;
+  --purple-dark: #3D1A6E;
+  --gold: #C9A84C;
+  --gold-lt: #F0D080;
+  --black: #0A0A0F;
+  --dark: #1A1025;
+  --white: #FFFFFF;
+  --gray: #6B6480;
+  --lgray: #F5F4F8;
+  --mgray: #E0DCE8;
+  --green: #1E7A44;
+  --green-lt: #D4EDDA;
+  --red: #C0392B;
+  --red-lt: #FAD7D3;
+  --yellow: #D4820A;
+  --yellow-lt: #FEF3CD;
+  --blue: #1565C0;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+  background: var(--lgray);
+  color: var(--black);
+  min-height: 100vh;
+}
+
+/* ── HEADER ── */
+.app-header {
+  background: var(--dark);
+  border-bottom: 4px solid var(--gold);
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.app-logo {
+  width: 48px; height: 48px;
+  background: var(--purple);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; font-weight: 900; color: var(--white);
+  flex-shrink: 0;
+  letter-spacing: -1px;
+}
+.app-title { flex: 1; }
+.app-title h1 { font-size: 17px; font-weight: 700; color: var(--white); }
+.app-title p { font-size: 11px; color: var(--gold); margin-top: 2px; }
+.report-id {
+  font-size: 11px; font-weight: 700;
+  color: var(--gold); text-align: right;
+  line-height: 1.6;
+}
+
+/* ── SECTIONS ── */
+.section {
+  background: var(--white);
+  margin: 12px;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(91,45,142,0.10);
+}
+.section-hdr {
+  background: var(--dark);
+  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.section-hdr.purple { background: var(--purple); }
+.section-hdr.gold { background: var(--gold); }
+.section-hdr h2 { font-size: 13px; font-weight: 700; color: var(--white); letter-spacing: .5px; }
+.section-hdr .ico { font-size: 18px; }
+.section-body { padding: 16px; }
+
+/* ── FORM FIELDS ── */
+.field-row { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.field { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 140px; }
+.field label { font-size: 11px; font-weight: 700; color: var(--gray); letter-spacing: .8px; text-transform: uppercase; }
+.field input, .field select, .field textarea {
+  border: 1.5px solid var(--mgray);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--black);
+  background: var(--lgray);
+  outline: none;
+  transition: border-color .2s;
+  -webkit-appearance: none;
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+  border-color: var(--purple);
+  background: var(--white);
+}
+.field textarea { resize: vertical; min-height: 72px; }
+
+/* ── CONDITION GRID ── */
+.cond-table { width: 100%; border-collapse: collapse; }
+.cond-table th {
+  font-size: 10px; font-weight: 700; letter-spacing: .8px;
+  text-transform: uppercase; color: var(--gray);
+  padding: 6px 8px; text-align: left;
+  border-bottom: 2px solid var(--mgray);
+  background: var(--lgray);
+}
+.cond-table td { padding: 8px 6px; vertical-align: middle; }
+.cond-table tr:nth-child(even) td { background: var(--lgray); }
+.cond-table tr:last-child td { border-bottom: none; }
+.cond-table td:first-child {
+  font-size: 13px; font-weight: 600; color: var(--black); width: 150px;
+}
+.status-select {
+  border: 1.5px solid var(--mgray);
+  border-radius: 20px;
+  padding: 5px 10px;
+  font-size: 12px; font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+  -webkit-appearance: none;
+  min-width: 90px;
+  text-align: center;
+}
+.status-select.ok { background: var(--green-lt); color: var(--green); border-color: var(--green); }
+.status-select.damage { background: var(--red-lt); color: var(--red); border-color: var(--red); }
+.status-select.note { background: var(--yellow-lt); color: var(--yellow); border-color: var(--yellow); }
+.note-input {
+  border: 1.5px solid var(--mgray);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  width: 100%;
+  background: var(--lgray);
+  outline: none;
+  color: var(--black);
+}
+.note-input:focus { border-color: var(--purple); background: var(--white); }
+
+/* ── MILEAGE ── */
+.mileage-row {
+  display: flex; gap: 12px; align-items: center;
+  background: var(--lgray); border-radius: 10px; padding: 12px;
+  margin-top: 8px;
+}
+.mileage-box { flex: 1; text-align: center; }
+.mileage-box label { font-size: 10px; font-weight: 700; color: var(--gray); letter-spacing: .8px; text-transform: uppercase; display: block; margin-bottom: 4px; }
+.mileage-box input {
+  border: 2px solid var(--purple);
+  border-radius: 8px; padding: 10px;
+  font-size: 18px; font-weight: 700;
+  text-align: center; width: 100%;
+  background: var(--white); color: var(--black);
+  outline: none; font-family: inherit;
+}
+.mileage-diff {
+  font-size: 13px; font-weight: 700;
+  color: var(--purple); text-align: center;
+  flex-shrink: 0; min-width: 60px;
+}
+
+/* ── PHOTO SLOTS ── */
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.photo-slot {
+  border: 2px dashed var(--mgray);
+  border-radius: 10px;
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  background: var(--lgray);
+  transition: border-color .2s;
+}
+.photo-slot:hover { border-color: var(--purple); }
+.photo-slot input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.photo-slot .ph-ico { font-size: 28px; margin-bottom: 6px; }
+.photo-slot .ph-lbl { font-size: 11px; font-weight: 700; color: var(--gray); text-align: center; }
+.photo-slot img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%; object-fit: cover;
+}
+.photo-slot .ph-remove {
+  position: absolute; top: 4px; right: 4px;
+  background: rgba(0,0,0,.6); color: var(--white);
+  border: none; border-radius: 50%;
+  width: 22px; height: 22px;
+  font-size: 13px; cursor: pointer;
+  display: none; align-items: center; justify-content: center;
+}
+.photo-slot:hover .ph-remove { display: flex; }
+
+/* ── SIGNATURE PAD ── */
+.sig-area {
+  border: 2px solid var(--mgray);
+  border-radius: 10px;
+  background: var(--lgray);
+  overflow: hidden;
+  position: relative;
+}
+canvas#sigPad {
+  display: block;
+  width: 100%;
+  height: 120px;
+  touch-action: none;
+  cursor: crosshair;
+}
+.sig-clear {
+  position: absolute; top: 8px; right: 8px;
+  background: var(--white); border: 1px solid var(--mgray);
+  border-radius: 6px; padding: 4px 10px;
+  font-size: 11px; font-weight: 600; color: var(--gray);
+  cursor: pointer;
+}
+
+/* ── SUBMIT BAR ── */
+.submit-bar {
+  background: var(--dark);
+  border-top: 3px solid var(--gold);
+  padding: 16px;
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 10px;
+}
+.btn-submit {
+  flex: 1;
+  background: var(--purple);
+  border: none; border-radius: 12px;
+  color: var(--white); font-size: 16px; font-weight: 700;
+  padding: 14px;
+  cursor: pointer; font-family: inherit;
+  -webkit-appearance: none;
+  transition: background .2s;
+}
+.btn-submit:active { background: var(--purple-dark); }
+.btn-clear-all {
+  background: transparent;
+  border: 2px solid var(--gray);
+  border-radius: 12px;
+  color: var(--gray); font-size: 14px; font-weight: 600;
+  padding: 14px 18px;
+  cursor: pointer; font-family: inherit;
+  -webkit-appearance: none;
+}
+
+/* ── COMPLETE SCREEN ── */
+#completeScreen {
+  display: none;
+  position: fixed; inset: 0;
+  background: var(--dark);
+  z-index: 999;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  text-align: center;
+}
+#completeScreen.show { display: flex; }
+.complete-ico { font-size: 64px; margin-bottom: 20px; }
+.complete-title { font-size: 28px; font-weight: 800; color: var(--white); margin-bottom: 10px; }
+.complete-sub { font-size: 16px; color: var(--gold); margin-bottom: 8px; }
+.complete-id { font-size: 13px; color: var(--gray); margin-bottom: 32px; }
+.complete-actions { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 340px; }
+.btn-new { background: var(--purple); border: none; border-radius: 12px; color: var(--white); font-size: 16px; font-weight: 700; padding: 16px; cursor: pointer; font-family: inherit; }
+.btn-view { background: transparent; border: 2px solid var(--gold); border-radius: 12px; color: var(--gold); font-size: 15px; font-weight: 600; padding: 14px; cursor: pointer; font-family: inherit; }
+
+/* ── HISTORY BADGE ── */
+.history-btn {
+  background: var(--purple);
+  border: none; border-radius: 8px;
+  color: var(--white); font-size: 12px; font-weight: 700;
+  padding: 6px 12px; cursor: pointer;
+  font-family: inherit;
+}
+
+/* ── RESPONSIVE ── */
+@media (max-width: 480px) {
+  .photo-grid { grid-template-columns: repeat(2, 1fr); }
+  .field { min-width: 100%; }
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="app-header">
+  <div class="app-logo">Z</div>
+  <div class="app-title">
+    <h1>Vehicle Condition Report</h1>
+    <p>ZIPDRIVE Services — Driver Tool</p>
+  </div>
+  <div class="report-id">
+    <div id="reportNum">ZD-2025-0001</div>
+    <div id="reportDate" style="color:#aaa;font-size:10px;"></div>
+  </div>
+</div>
+
+<!-- JOB INFO -->
+<div class="section">
+  <div class="section-hdr">
+    <span class="ico">📋</span>
+    <h2>JOB INFORMATION</h2>
+  </div>
+  <div class="section-body">
+    <div class="field-row">
+      <div class="field">
+        <label>Driver Name</label>
+        <select id="driverName">
+          <option value="">Select Driver</option>
+          <option>Greg Wagner</option>
+          <option>Don Cowell</option>
+          <option>Jackie Zipfel</option>
+          <option>Curt Zipfel</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Job Type</label>
+        <select id="jobType">
+          <option value="">Select Type</option>
+          <option>Oil Change + Wash Concierge</option>
+          <option>Service Center Drop-Off</option>
+          <option>Dealer Trade</option>
+          <option>Auction Run</option>
+          <option>Fleet Repositioning</option>
+          <option>New/Used Car Delivery</option>
+          <option>Consumer Acquisition</option>
+          <option>Vehicle Relocation</option>
+          <option>EV Charging</option>
+          <option>Loaner Return</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Client Name</label>
+        <input type="text" id="clientName" placeholder="Full name">
+      </div>
+      <div class="field">
+        <label>Client Phone</label>
+        <input type="tel" id="clientPhone" placeholder="(614) 555-0000">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Pickup Location</label>
+        <input type="text" id="pickupLoc" placeholder="Address or location">
+      </div>
+      <div class="field">
+        <label>Delivery Location</label>
+        <input type="text" id="delivLoc" placeholder="Address or location">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- VEHICLE INFO -->
+<div class="section">
+  <div class="section-hdr purple">
+    <span class="ico">🚗</span>
+    <h2>VEHICLE INFORMATION</h2>
+  </div>
+  <div class="section-body">
+    <div class="field-row">
+      <div class="field">
+        <label>Year</label>
+        <input type="text" id="vYear" placeholder="2024">
+      </div>
+      <div class="field">
+        <label>Make</label>
+        <input type="text" id="vMake" placeholder="Toyota">
+      </div>
+      <div class="field">
+        <label>Model</label>
+        <input type="text" id="vModel" placeholder="Camry">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Color</label>
+        <input type="text" id="vColor" placeholder="Pearl White">
+      </div>
+      <div class="field">
+        <label>License Plate</label>
+        <input type="text" id="vPlate" placeholder="ABC 1234">
+      </div>
+      <div class="field">
+        <label>VIN (last 6)</label>
+        <input type="text" id="vVIN" placeholder="ABC123" maxlength="17">
+      </div>
+    </div>
+    <div class="mileage-row">
+      <div class="mileage-box">
+        <label>MILEAGE IN</label>
+        <input type="number" id="mileIn" placeholder="0" oninput="calcMiles()">
+      </div>
+      <div class="mileage-diff" id="mileDiff">+0 mi</div>
+      <div class="mileage-box">
+        <label>MILEAGE OUT</label>
+        <input type="number" id="mileOut" placeholder="0" oninput="calcMiles()">
+      </div>
+    </div>
+    <div class="field-row" style="margin-top:12px;">
+      <div class="field">
+        <label>Fuel Level In</label>
+        <select id="fuelIn">
+          <option>Full</option>
+          <option>3/4</option>
+          <option>1/2</option>
+          <option>1/4</option>
+          <option>Low</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Fuel Level Out</label>
+        <select id="fuelOut">
+          <option>Full</option>
+          <option>3/4</option>
+          <option>1/2</option>
+          <option>1/4</option>
+          <option>Low</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Warning Lights</label>
+        <select id="warnLights">
+          <option>None</option>
+          <option>Check Engine</option>
+          <option>Oil Pressure</option>
+          <option>Tire Pressure</option>
+          <option>Other — see notes</option>
+        </select>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- EXTERIOR CONDITION -->
+<div class="section">
+  <div class="section-hdr">
+    <span class="ico">🔍</span>
+    <h2>EXTERIOR CONDITION</h2>
+  </div>
+  <div class="section-body" style="padding:0;overflow-x:auto;">
+    <table class="cond-table">
+      <thead>
+        <tr>
+          <th>Panel</th>
+          <th style="min-width:80px;">Status</th>
+          <th style="min-width:180px;">Notes</th>
+        </tr>
+      </thead>
+      <tbody id="extBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- INTERIOR CONDITION -->
+<div class="section">
+  <div class="section-hdr">
+    <span class="ico">🪑</span>
+    <h2>INTERIOR CONDITION</h2>
+  </div>
+  <div class="section-body" style="padding:0;overflow-x:auto;">
+    <table class="cond-table">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th style="min-width:80px;">Status</th>
+          <th style="min-width:180px;">Notes</th>
+        </tr>
+      </thead>
+      <tbody id="intBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- PHOTOS -->
+<div class="section">
+  <div class="section-hdr purple">
+    <span class="ico">📸</span>
+    <h2>PHOTO DOCUMENTATION</h2>
+  </div>
+  <div class="section-body">
+    <div class="photo-grid" id="photoGrid"></div>
+    <p style="font-size:11px;color:var(--gray);margin-top:10px;text-align:center;">Tap each slot to take or upload a photo. All 6 required.</p>
+  </div>
+</div>
+
+<!-- DRIVER NOTES -->
+<div class="section">
+  <div class="section-hdr">
+    <span class="ico">📝</span>
+    <h2>DRIVER NOTES</h2>
+  </div>
+  <div class="section-body">
+    <div class="field">
+      <label>Additional Observations</label>
+      <textarea id="driverNotes" placeholder="Note any pre-existing damage, unusual observations, client instructions, or anything relevant to this job..."></textarea>
+    </div>
+    <div class="field-row" style="margin-top:10px;">
+      <div class="field">
+        <label>Pickup Time</label>
+        <input type="time" id="pickupTime">
+      </div>
+      <div class="field">
+        <label>Return Time</label>
+        <input type="time" id="returnTime">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DRIVER SIGNATURE -->
+<div class="section">
+  <div class="section-hdr gold">
+    <span class="ico">✍️</span>
+    <h2 style="color:var(--black);">DRIVER SIGNATURE</h2>
+  </div>
+  <div class="section-body">
+    <p style="font-size:12px;color:var(--gray);margin-bottom:8px;">Sign below to certify this report is accurate.</p>
+    <div class="sig-area">
+      <canvas id="sigPad"></canvas>
+      <button class="sig-clear" onclick="clearSig()">Clear</button>
+    </div>
+  </div>
+</div>
+
+<!-- SUBMIT BAR -->
+<div class="submit-bar">
+  <button class="btn-clear-all" onclick="clearAll()">Reset</button>
+  <button class="btn-submit" onclick="submitReport()">Submit Report ✓</button>
+</div>
+
+<!-- COMPLETE SCREEN -->
+<div id="completeScreen">
+  <div class="complete-ico">✅</div>
+  <div class="complete-title">Report Complete</div>
+  <div class="complete-sub" id="completeVehicle"></div>
+  <div class="complete-id" id="completeId"></div>
+
+  <!-- Send options -->
+  <div style="width:100%;max-width:360px;margin-bottom:20px;">
+    <div style="font-size:12px;font-weight:700;color:#9B8EC0;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px;text-align:left;">SEND REPORT TO CLIENT</div>
+    <div style="display:flex;gap:8px;margin-bottom:10px;">
+      <div style="flex:1;display:flex;flex-direction:column;gap:5px;">
+        <label style="font-size:11px;color:#9B8EC0;font-weight:600;">Client Phone</label>
+        <input type="tel" id="sendPhone" placeholder="(614) 555-0000"
+          style="border:1.5px solid #3D2A60;border-radius:8px;padding:10px;font-size:14px;background:#2A1845;color:#fff;outline:none;font-family:inherit;width:100%;">
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:5px;">
+        <label style="font-size:11px;color:#9B8EC0;font-weight:600;">Client Email</label>
+        <input type="email" id="sendEmail" placeholder="client@email.com"
+          style="border:1.5px solid #3D2A60;border-radius:8px;padding:10px;font-size:14px;background:#2A1845;color:#fff;outline:none;font-family:inherit;width:100%;">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
+      <button onclick="sendSMS()" style="flex:1;background:#1E7A44;border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:700;padding:12px;cursor:pointer;font-family:inherit;">
+        💬 Send via Text
+      </button>
+      <button onclick="sendEmail()" style="flex:1;background:#1565C0;border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:700;padding:12px;cursor:pointer;font-family:inherit;">
+        ✉️ Send via Email
+      </button>
+    </div>
+    <button onclick="copyReport()" style="width:100%;background:#3D1A6E;border:1.5px solid #C9A84C;border-radius:10px;color:#C9A84C;font-size:13px;font-weight:700;padding:10px;cursor:pointer;font-family:inherit;">
+      📋 Copy Full Report Text
+    </button>
+    <div id="copyConfirm" style="display:none;text-align:center;color:#1E7A44;font-size:12px;font-weight:700;margin-top:6px;">Copied to clipboard!</div>
+  </div>
+
+  <div class="complete-actions">
+    <button class="btn-new" onclick="startNew()">Start New Report</button>
+    <button class="btn-view" onclick="viewSummary()">Back to Report</button>
+  </div>
+</div>
+
+<script>
+// ── REPORT NUMBER ──────────────────────────────────────────────────────────
+var reportCount = parseInt(localStorage.getItem('zd_report_count') || '847');
+function genReportId() {
+  var d = new Date();
+  return 'ZD-' + d.getFullYear() + '-' + String(reportCount).padStart(4,'0');
+}
+document.getElementById('reportNum').textContent = genReportId();
+var now = new Date();
+document.getElementById('reportDate').textContent =
+  now.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) + '  ' +
+  now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+
+// Auto-fill time
+var h = String(now.getHours()).padStart(2,'0');
+var m = String(now.getMinutes()).padStart(2,'0');
+document.getElementById('pickupTime').value = h + ':' + m;
+
+// ── MILEAGE DIFF ───────────────────────────────────────────────────────────
+function calcMiles() {
+  var inn = parseInt(document.getElementById('mileIn').value)||0;
+  var out = parseInt(document.getElementById('mileOut').value)||0;
+  var diff = out - inn;
+  var el = document.getElementById('mileDiff');
+  el.textContent = (diff>=0?'+':'') + diff + ' mi';
+  el.style.color = diff > 50 ? '#C0392B' : '#5B2D8E';
+}
+
+// ── EXTERIOR PANELS ────────────────────────────────────────────────────────
+var extPanels = [
+  'Hood','Roof','Front Bumper','Rear Bumper',
+  'Driver Door','Passenger Door','Driver Rear Door','Pass. Rear Door',
+  'Front Left Fender','Front Right Fender',
+  'Rear Left Quarter','Rear Right Quarter',
+  'Windshield','All Other Glass','Mirrors'
+];
+var intItems = [
+  'Interior Cleanliness','Dashboard / Controls','Steering Wheel',
+  'Seats / Upholstery','Floor Mats','Headliner',
+  'All Windows (interior)','Trunk / Cargo Area'
+];
+
+function buildTable(items, bodyId) {
+  var tbody = document.getElementById(bodyId);
+  items.forEach(function(item, i) {
+    var tr = document.createElement('tr');
+    var id = bodyId + '_' + i;
+    tr.innerHTML =
+      '<td>' + item + '</td>' +
+      '<td>' +
+        '<select class="status-select ok" id="' + id + '_status" onchange="updateStatus(this)">' +
+          '<option value="ok">OK</option>' +
+          '<option value="damage">DAMAGE</option>' +
+          '<option value="note">NOTE</option>' +
+        '</select>' +
+      '</td>' +
+      '<td><input class="note-input" id="' + id + '_note" type="text" placeholder="Add note..."></td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function updateStatus(sel) {
+  sel.className = 'status-select ' + sel.value;
+}
+
+buildTable(extPanels, 'extBody');
+buildTable(intItems, 'intBody');
+
+// ── PHOTO SLOTS ────────────────────────────────────────────────────────────
+var photoLabels = ['Front Left','Front Right','Rear Left','Rear Right','Interior','Odometer'];
+var photoGrid = document.getElementById('photoGrid');
+photoLabels.forEach(function(lbl, i) {
+  var slot = document.createElement('div');
+  slot.className = 'photo-slot';
+  slot.id = 'photo_' + i;
+  slot.innerHTML =
+    '<input type="file" accept="image/*" capture="environment" onchange="loadPhoto(this,' + i + ')">' +
+    '<div class="ph-ico">📷</div>' +
+    '<div class="ph-lbl">' + lbl + '</div>' +
+    '<button class="ph-remove" onclick="removePhoto(' + i + ',event)">✕</button>';
+  photoGrid.appendChild(slot);
+});
+
+function loadPhoto(input, idx) {
+  if (!input.files || !input.files[0]) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var slot = document.getElementById('photo_' + idx);
+    var existing = slot.querySelector('img');
+    if (existing) existing.remove();
+    var img = document.createElement('img');
+    img.src = e.target.result;
+    slot.appendChild(img);
+    slot.style.borderStyle = 'solid';
+    slot.style.borderColor = '#1E7A44';
+  };
+  reader.readAsDataURL(input.files[0]);
+}
+
+function removePhoto(idx, e) {
+  e.preventDefault(); e.stopPropagation();
+  var slot = document.getElementById('photo_' + idx);
+  var img = slot.querySelector('img');
+  if (img) img.remove();
+  slot.style.borderStyle = 'dashed';
+  slot.style.borderColor = 'var(--mgray)';
+  var inp = slot.querySelector('input');
+  inp.value = '';
+}
+
+// ── SIGNATURE PAD ─────────────────────────────────────────────────────────
+var canvas = document.getElementById('sigPad');
+var ctx = canvas.getContext('2d');
+var drawing = false;
+
+function resizeCanvas() {
+  var rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width;
+  canvas.height = 120;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+function getPos(e) {
+  var rect = canvas.getBoundingClientRect();
+  var src = e.touches ? e.touches[0] : e;
+  return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+}
+
+canvas.addEventListener('mousedown', function(e) { drawing=true; var p=getPos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y); });
+canvas.addEventListener('mousemove', function(e) { if(!drawing) return; var p=getPos(e); ctx.lineTo(p.x,p.y); ctx.strokeStyle='#3D1A6E'; ctx.lineWidth=2.5; ctx.lineCap='round'; ctx.stroke(); });
+canvas.addEventListener('mouseup', function() { drawing=false; });
+canvas.addEventListener('touchstart', function(e) { e.preventDefault(); drawing=true; var p=getPos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y); });
+canvas.addEventListener('touchmove', function(e) { e.preventDefault(); if(!drawing) return; var p=getPos(e); ctx.lineTo(p.x,p.y); ctx.strokeStyle='#3D1A6E'; ctx.lineWidth=2.5; ctx.lineCap='round'; ctx.stroke(); });
+canvas.addEventListener('touchend', function() { drawing=false; });
+
+function clearSig() { ctx.clearRect(0,0,canvas.width,canvas.height); }
+
+// ── SUBMIT ─────────────────────────────────────────────────────────────────
+function submitReport() {
+  var driver = document.getElementById('driverName').value;
+  var client = document.getElementById('clientName').value;
+  var year = document.getElementById('vYear').value;
+  var make = document.getElementById('vMake').value;
+  var model = document.getElementById('vModel').value;
+
+  if (!driver) { alert('Please select a driver.'); return; }
+  if (!client) { alert('Please enter the client name.'); return; }
+  if (!make || !model) { alert('Please enter vehicle make and model.'); return; }
+
+  reportCount++;
+  localStorage.setItem('zd_report_count', reportCount);
+
+  var returnTime = document.getElementById('returnTime').value;
+  if (!returnTime) {
+    var n = new Date();
+    document.getElementById('returnTime').value =
+      String(n.getHours()).padStart(2,'0') + ':' + String(n.getMinutes()).padStart(2,'0');
+  }
+
+  var sc = document.getElementById('completeScreen');
+  document.getElementById('completeVehicle').textContent = year + ' ' + make + ' ' + model + ' — ' + client;
+  document.getElementById('completeId').textContent = 'Report ' + genReportId() + ' saved';
+  sc.classList.add('show');
+}
+
+function startNew() {
+  document.getElementById('completeScreen').classList.remove('show');
+  clearAll();
+  reportCount = parseInt(localStorage.getItem('zd_report_count') || '848');
+  document.getElementById('reportNum').textContent = genReportId();
+  var now2 = new Date();
+  document.getElementById('reportDate').textContent =
+    now2.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) + '  ' +
+    now2.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+  window.scrollTo(0,0);
+}
+
+function viewSummary() {
+  document.getElementById('completeScreen').classList.remove('show');
+  window.scrollTo(0,0);
+}
+
+function clearAll() {
+  document.querySelectorAll('input[type=text],input[type=tel],input[type=number]').forEach(function(el){ el.value=''; });
+  document.querySelectorAll('textarea').forEach(function(el){ el.value=''; });
+  document.querySelectorAll('select').forEach(function(el){ el.selectedIndex=0; });
+  document.querySelectorAll('.status-select').forEach(function(el){ el.className='status-select ok'; });
+  document.querySelectorAll('.photo-slot img').forEach(function(el){ el.remove(); });
+  document.querySelectorAll('.photo-slot').forEach(function(sl){
+    sl.style.borderStyle='dashed'; sl.style.borderColor='var(--mgray)';
+  });
+  document.querySelectorAll('input[type=file]').forEach(function(el){ el.value=''; });
+  calcMiles();
+  clearSig();
+  document.getElementById('mileDiff').textContent = '+0 mi';
+}
+</script>
+</body>
+</html>
