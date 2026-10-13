@@ -231,6 +231,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--purple-h
 .confirm{margin-top:12px;padding:14px;border-radius:14px;background:var(--panel-2);border:1px solid var(--warn);display:flex;flex-direction:column;gap:10px}
 .confirm span{font-weight:600}
 .confirm .acts{display:flex;flex-wrap:wrap;gap:8px}
+.vhint{font-size:12.5px;color:var(--muted)}
+#vehicles{font-family:inherit;line-height:1.5}
 .vhead{display:grid;grid-template-columns:1.5fr 1fr 34px;gap:6px;font-size:11px;color:var(--muted);font-weight:600}
 .vrow{display:grid;grid-template-columns:1.5fr 1fr 34px;gap:6px;margin-bottom:6px}
 .vrow input{padding:10px;font-size:14px;min-width:0}
@@ -461,15 +463,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--purple-h
       <div class="field"><label for="to">Destination</label><input id="to" value="Dealership, Westerville" autocomplete="off"></div>
       <div class="field"><label for="when">Date</label><input id="when" type="date"></div>
       <div class="field">
-        <label>Vehicles</label>
-        <div class="vhead"><span>Year / make / model</span><span>Stock #</span><span></span></div>
-        <div id="vehRows"></div>
-        <div class="acts" style="margin-top:4px"><button class="mini" type="button" id="addVeh">+ Add vehicle</button><button class="mini" type="button" id="pasteToggle">Paste a list</button></div>
-        <div class="pastebox" id="pasteBox" hidden>
-          <p>Paste one vehicle per line from your DMS or a spreadsheet: stock #, then year make model. Example: <b>U4471 2022 Honda CR-V</b></p>
-          <textarea id="pasteText" rows="4" placeholder="U4471 2022 Honda CR-V EX&#10;U4502 2021 Toyota Tacoma TRD"></textarea>
-          <button class="btn btn-gold" type="button" id="pasteAdd" style="margin-top:8px;padding:9px 14px;font-size:14px">Add these vehicles</button>
-        </div>
+        <label for="vehicles">Vehicles · one per line</label>
+        <textarea id="vehicles" name="zd-vehicle-list" rows="4" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" placeholder="U4471 2022 Honda CR-V EX&#10;U4502 2021 Toyota Tacoma TRD"></textarea>
+        <span class="vhint">Stock # then year, make, model. Paste a whole list from your DMS or type one per line.</span>
       </div>
       <div class="two">
         <div class="field"><label for="name">Your name</label><input id="name" placeholder="Name" autocomplete="name"></div>
@@ -649,24 +645,10 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--purple-h
   $$('#svcSeg button').forEach(b => b.addEventListener('click', () => pickService(b.textContent.trim())));
   const d = new Date(); d.setDate(d.getDate()+1); $('#when').value = d.toISOString().slice(0,10);
 
-  function vehRow(v){v=v||{};const r=document.createElement('div');r.className='vrow';const n=$('#vehRows').children.length;
-    r.innerHTML='<input aria-label="Year make model" id="vy'+n+'" placeholder="2022 Honda CR-V" autocomplete="off"><input aria-label="Stock number" id="vs'+n+'" placeholder="U4471" autocomplete="off"><button type="button" class="x" aria-label="Remove vehicle">×</button>';
-    r.children[0].value=v.y||'';r.children[1].value=v.s||'';
-    r.querySelector('.x').addEventListener('click',()=>{if($('#vehRows').children.length>1)r.remove();else{r.children[0].value='';r.children[1].value=''}});
-    $('#vehRows').appendChild(r);}
-  vehRow({y:'2022 Honda CR-V EX',s:'U4471'});
-  $('#addVeh').addEventListener('click',()=>{vehRow();$('#vehRows').lastChild.querySelector('input').focus()});
-  $('#pasteToggle').addEventListener('click',()=>{$('#pasteBox').hidden=!$('#pasteBox').hidden;if(!$('#pasteBox').hidden)$('#pasteText').focus()});
-  $('#pasteAdd').addEventListener('click',()=>{
-    const ls=$('#pasteText').value.split(/\n+/).map(x=>x.trim()).filter(Boolean); if(!ls.length){toast('Paste at least one line');return}
-    const rows=[...$('#vehRows').children]; if(rows.length===1&&!rows[0].children[0].value&&!rows[0].children[1].value)rows[0].remove();
-    ls.forEach(l=>{const m=l.match(/^([A-Z]{0,3}-?\d{3,6}[A-Z]?)[\s,\t]+(.*)$/i);vehRow(m?{s:m[1],y:m[2]}:{y:l})});
-    $('#pasteText').value='';$('#pasteBox').hidden=true;toast(ls.length+' vehicle'+(ls.length>1?'s':'')+' added')});
-  const vehList=()=>[...$('#vehRows').children].map(r=>{const y=r.children[0].value.trim(),k=r.children[1].value.trim();return [y,k&&('Stk '+k)].filter(Boolean).join(' · ')}).filter(Boolean);
+  const vehList=()=>$('#vehicles').value.split(/\n+/).map(x=>x.trim()).filter(Boolean).map(l=>{const m=l.match(/^([A-Z]{0,3}-?\d{3,6}[A-Z]?)[\s,\t]+(.+)$/i);return (m&&!/^(19|20)\d{2}$/.test(m[1]))?m[2].trim()+' · Stk '+m[1].toUpperCase():l});
 
   function clearForm(){
-    ['from','to','name','ph','notes','pasteText'].forEach(id => $('#'+id).value = '');
-    $('#vehRows').innerHTML=''; vehRow(); $('#pasteBox').hidden=true;
+    ['from','to','name','ph','notes','vehicles'].forEach(id => $('#'+id).value = '');
     const t = new Date(); t.setDate(t.getDate()+1); $('#when').value = t.toISOString().slice(0,10);
     pickService('Dealer trade');
     $('#outText').textContent = ''; $('#smsReq').href = 'sms:+18559476446'; $('#mailReq').href = 'mailto:czipfel@zipdriveservices.com';
