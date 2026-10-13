@@ -7,6 +7,15 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ZIPDRIVE">
 <meta name="description" content="ZIPDRIVE Services: Central Ohio vehicle drive-away. Request a move, flat rate, fully insured. 855-ZIP-OHIO">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ZIPDRIVE Services">
+<meta property="og:title" content="ZIPDRIVE: Request a move in 30 seconds">
+<meta property="og:description" content="Dealer trades, fleet moves, auction runs and home pickup across Central Ohio. Flat rate, $1M insured, MVR-checked drivers. 855-ZIP-OHIO">
+<meta property="og:url" content="https://zipdriveservices.com/app">
+<meta property="og:image" content="https://czip46.github.io/zipdrive-portal/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="627">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="apple-touch-icon" href="zipdrive-icon.png">
 <link rel="icon" type="image/png" href="zipdrive-icon.png">
 <link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22ZIPDRIVE%20Services%22%2C%22short_name%22%3A%22ZIPDRIVE%22%2C%22start_url%22%3A%22.%2Fapp.html%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230B0A0E%22%2C%22theme_color%22%3A%22%230B0A0E%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22https%3A%2F%2Fczip46.github.io%2Fzipdrive-portal%2Fzipdrive-icon-512.png%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
@@ -222,6 +231,12 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--purple-h
 .confirm{margin-top:12px;padding:14px;border-radius:14px;background:var(--panel-2);border:1px solid var(--warn);display:flex;flex-direction:column;gap:10px}
 .confirm span{font-weight:600}
 .confirm .acts{display:flex;flex-wrap:wrap;gap:8px}
+.vhead{display:grid;grid-template-columns:1.5fr 1fr 34px;gap:6px;font-size:11px;color:var(--muted);font-weight:600}
+.vrow{display:grid;grid-template-columns:1.5fr 1fr 34px;gap:6px;margin-bottom:6px}
+.vrow input{padding:10px;font-size:14px;min-width:0}
+.vrow .x{border:0;border-radius:9px;background:var(--panel-2);color:var(--muted);font-size:18px}
+.pastebox{margin-top:8px;padding:12px;border-radius:12px;background:var(--panel-2);border:1px solid var(--line)}
+.pastebox p{margin:0 0 8px;font-size:13px;color:var(--muted)}
 .foot{text-align:center;color:#6f6880;font-size:12px;padding:28px 0 8px}
 .foot b{font-family:var(--display);letter-spacing:.08em;color:var(--muted)}
 </style>
@@ -444,11 +459,18 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--purple-h
 
       <div class="field"><label for="from">Pickup location</label><input id="from" value="Dealership, Hilliard" autocomplete="off"></div>
       <div class="field"><label for="to">Destination</label><input id="to" value="Dealership, Westerville" autocomplete="off"></div>
-      <div class="two">
-        <div class="field"><label for="when">Date</label><input id="when" type="date"></div>
-        <div class="field"><label for="qty">Vehicles</label><input id="qty" type="number" min="1" value="1" inputmode="numeric"></div>
+      <div class="field"><label for="when">Date</label><input id="when" type="date"></div>
+      <div class="field">
+        <label>Vehicles</label>
+        <div class="vhead"><span>Year / make / model</span><span>Stock #</span><span></span></div>
+        <div id="vehRows"></div>
+        <div class="acts" style="margin-top:4px"><button class="mini" type="button" id="addVeh">+ Add vehicle</button><button class="mini" type="button" id="pasteToggle">Paste a list</button></div>
+        <div class="pastebox" id="pasteBox" hidden>
+          <p>Paste one vehicle per line from your DMS or a spreadsheet: stock #, then year make model. Example: <b>U4471 2022 Honda CR-V</b></p>
+          <textarea id="pasteText" rows="4" placeholder="U4471 2022 Honda CR-V EX&#10;U4502 2021 Toyota Tacoma TRD"></textarea>
+          <button class="btn btn-gold" type="button" id="pasteAdd" style="margin-top:8px;padding:9px 14px;font-size:14px">Add these vehicles</button>
+        </div>
       </div>
-      <div class="field"><label for="veh">Vehicle(s)</label><input id="veh" value="2026 SUV, stock #12345" autocomplete="off"></div>
       <div class="two">
         <div class="field"><label for="name">Your name</label><input id="name" placeholder="Name" autocomplete="name"></div>
         <div class="field"><label for="ph">Phone</label><input id="ph" type="tel" placeholder="(614) 555-0100" autocomplete="tel"></div>
@@ -627,9 +649,24 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--purple-h
   $$('#svcSeg button').forEach(b => b.addEventListener('click', () => pickService(b.textContent.trim())));
   const d = new Date(); d.setDate(d.getDate()+1); $('#when').value = d.toISOString().slice(0,10);
 
+  function vehRow(v){v=v||{};const r=document.createElement('div');r.className='vrow';const n=$('#vehRows').children.length;
+    r.innerHTML='<input aria-label="Year make model" id="vy'+n+'" placeholder="2022 Honda CR-V" autocomplete="off"><input aria-label="Stock number" id="vs'+n+'" placeholder="U4471" autocomplete="off"><button type="button" class="x" aria-label="Remove vehicle">×</button>';
+    r.children[0].value=v.y||'';r.children[1].value=v.s||'';
+    r.querySelector('.x').addEventListener('click',()=>{if($('#vehRows').children.length>1)r.remove();else{r.children[0].value='';r.children[1].value=''}});
+    $('#vehRows').appendChild(r);}
+  vehRow({y:'2022 Honda CR-V EX',s:'U4471'});
+  $('#addVeh').addEventListener('click',()=>{vehRow();$('#vehRows').lastChild.querySelector('input').focus()});
+  $('#pasteToggle').addEventListener('click',()=>{$('#pasteBox').hidden=!$('#pasteBox').hidden;if(!$('#pasteBox').hidden)$('#pasteText').focus()});
+  $('#pasteAdd').addEventListener('click',()=>{
+    const ls=$('#pasteText').value.split(/\n+/).map(x=>x.trim()).filter(Boolean); if(!ls.length){toast('Paste at least one line');return}
+    const rows=[...$('#vehRows').children]; if(rows.length===1&&!rows[0].children[0].value&&!rows[0].children[1].value)rows[0].remove();
+    ls.forEach(l=>{const m=l.match(/^([A-Z]{0,3}-?\d{3,6}[A-Z]?)[\s,\t]+(.*)$/i);vehRow(m?{s:m[1],y:m[2]}:{y:l})});
+    $('#pasteText').value='';$('#pasteBox').hidden=true;toast(ls.length+' vehicle'+(ls.length>1?'s':'')+' added')});
+  const vehList=()=>[...$('#vehRows').children].map(r=>{const y=r.children[0].value.trim(),k=r.children[1].value.trim();return [y,k&&('Stk '+k)].filter(Boolean).join(' · ')}).filter(Boolean);
+
   function clearForm(){
-    ['from','to','veh','name','ph','notes'].forEach(id => $('#'+id).value = '');
-    $('#qty').value = '1';
+    ['from','to','name','ph','notes','pasteText'].forEach(id => $('#'+id).value = '');
+    $('#vehRows').innerHTML=''; vehRow(); $('#pasteBox').hidden=true;
     const t = new Date(); t.setDate(t.getDate()+1); $('#when').value = t.toISOString().slice(0,10);
     pickService('Dealer trade');
     $('#outText').textContent = ''; $('#smsReq').href = 'sms:+18559476446'; $('#mailReq').href = 'mailto:czipfel@zipdriveservices.com';
@@ -654,7 +691,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--purple-h
       'Pickup: ' + (v('from')||'—'),
       'Destination: ' + (v('to')||'—'),
       'Date: ' + dt,
-      'Vehicles: ' + (v('qty')||'1') + (v('veh') ? ' — ' + v('veh') : ''),
+      (()=>{const vl=vehList();return vl.length>1?'Vehicles ('+vl.length+'):\n'+vl.map((x,i)=>'  '+(i+1)+'. '+x).join('\n'):'Vehicle: '+(vl[0]||'TBD')})(),
       v('name') ? 'Name: ' + v('name') : null,
       v('ph') ? 'Phone: ' + v('ph') : null,
       v('notes') ? 'Notes: ' + v('notes') : null
