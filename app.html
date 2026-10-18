@@ -485,7 +485,10 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
           <div class="field"><label for="cTo">Destination city</label><select id="cTo"></select></div>
         </div>
         <div class="field" id="cMilesWrap" hidden><label for="cMiles">One-way miles</label><input id="cMiles" type="number" min="1" inputmode="decimal" placeholder="Example: 35"></div>
-        <div class="field"><label for="cQty">Vehicles</label><input id="cQty" type="number" min="1" value="1" inputmode="numeric"></div>
+        <div class="two">
+          <div class="field"><label for="cQty">Vehicles going</label><input id="cQty" type="number" min="1" value="1" inputmode="numeric"></div>
+          <div class="field"><label for="cRet">Coming back <span style="font-weight:400;opacity:.7">(optional)</span></label><input id="cRet" type="number" min="0" value="0" inputmode="numeric"></div>
+        </div>
         <div class="calc-out" id="cOut"><span>Pick pickup and destination cities to see an estimate.</span></div>
         <p class="note" style="margin:8px 0 0">Estimate based on driving distance, for moves not covered by a signed service agreement. Contract clients are billed at their agreed rates. ZIPDRIVE Services may adjust the final price, which is confirmed before we dispatch.</p>
       </div>
@@ -667,7 +670,7 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
   }
 
   /* ---- Instant estimate (business moves) ---- */
-  const RATE={driver:20,chase:20,burden:0.12,chaseVehiclePerMile:0.20,markup:1.25,mph:50,minPerVehicle:65,roadFactor:1.2,sameCityMiles:8};
+  const RATE={driver:20,chase:20,burden:0.12,chaseVehiclePerMile:0.20,markup:1.25,returnDiscount:0.5,turnaroundHrs:1,mph:50,minPerVehicle:65,roadFactor:1.2,sameCityMiles:8};
   const CALC_SERVICES=['Dealer trade','Fleet repositioning','Auction run','Sold vehicle delivery'];
   const CITIES=[['Columbus',39.9612,-82.9988],['Canal Winchester',39.8428,-82.8046],['Circleville',39.6006,-82.9460],['Delaware',40.2987,-83.0680],['Dublin',40.0992,-83.1141],['Gahanna',40.0192,-82.8793],['Grove City',39.8815,-83.0930],['Groveport',39.8784,-82.8838],['Hilliard',40.0334,-83.1582],['Johnstown',40.1537,-82.6852],['Lancaster',39.7137,-82.5993],['Lewis Center',40.1984,-83.0102],['London',39.8865,-83.4483],['Manheim Ohio (Grove City)',39.8560,-83.0560],['Marion',40.5887,-83.1285],['Marysville',40.2364,-83.3671],['Mount Vernon',40.3934,-82.4857],['Newark',40.0581,-82.4013],['Obetz',39.8790,-82.9507],['Pataskala',39.9956,-82.6743],['Pickerington',39.8842,-82.7535],['Plain City',40.1075,-83.2674],['Powell',40.1578,-83.0752],['Reynoldsburg',39.9548,-82.8121],['Sunbury',40.2426,-82.8591],['Upper Arlington',40.0270,-83.0624],['Westerville',40.1262,-82.9291],['Worthington',40.0931,-83.0180],['CMH John Glenn Airport',39.9980,-82.8919],['Chillicothe',39.3331,-82.9824],['Mansfield',40.7584,-82.5154],['Springfield',39.9242,-83.8088],['Zanesville',39.9403,-82.0132],['Akron',41.0814,-81.5190],['Cincinnati',39.1031,-84.5120],['Cleveland',41.4993,-81.6944],['Dayton',39.7589,-84.1916],['Toledo',41.6528,-83.5379]];
   const opts='<option value="">Choose city</option>'+CITIES.map((c,i)=>'<option value="'+i+'">'+c[0]+'</option>').join('')+'<option value="other">Other (enter miles)</option>';
@@ -677,13 +680,20 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
     if(f==='other'||t==='other'){const m=parseFloat($('#cMiles').value);return m>0?m:null}
     if(f===''||t==='')return null; if(f===t)return RATE.sameCityMiles;
     const d=hav(CITIES[+f],CITIES[+t]);return Math.max(RATE.sameCityMiles,d*(d<30?RATE.roadFactor:1.13))}
-  function quote(miles,n){const hrs=miles/RATE.mph;const rt=hrs*2;
+  function quote(miles,n,r=0){const hrs=miles/RATE.mph;const rt=hrs*2;
     // True cost: round-trip hours for every driver plus the chase driver, with payroll burden,
     // plus the chase vehicle's round-trip miles. Price = cost x 1.25 (25% on top of cost).
-    const labor=rt*(RATE.driver*n+RATE.chase)*(1+RATE.burden);
-    const vehicle=miles*2*RATE.chaseVehiclePerMile;
-    let per=Math.ceil((labor+vehicle)*RATE.markup/n);
-    per=Math.max(per,RATE.minPerVehicle);return {per,total:per*n,hrs}}
+    // Matched move (r>0): larger leg at full one-way rate, smaller leg 50% off; whole job
+    // must still clear cost x 1.25 (incl. 1 hr turnaround). Same formula as internal calculator.
+    const d=Math.max(n,r), vehicle=miles*2*RATE.chaseVehiclePerMile;
+    const oneWay=rt*(RATE.driver*d+RATE.chase)*(1+RATE.burden)+vehicle;
+    let per=Math.max(Math.ceil(oneWay*RATE.markup/d),RATE.minPerVehicle);
+    if(!r)return {per,total:per*n,hrs};
+    const small=Math.min(n,r), cost=(rt+RATE.turnaroundHrs)*(RATE.driver*d+RATE.chase)*(1+RATE.burden)+vehicle;
+    let ret=Math.max(Math.ceil(per*(1-RATE.returnDiscount)),RATE.minPerVehicle);
+    const short=cost*RATE.markup-(per*d+ret*small); let bump=0;if(short>0){bump=Math.ceil(short/(d+small));per+=bump;ret+=bump}
+    const outBig=n>=r;
+    return {per,ret,total:per*d+ret*small,hrs,matched:true,bump,outPer:outBig?per:ret,backPer:outBig?ret:per}}
   let lastEst=null; let qtyEdited=false;
   const fmt$=n=>'$'+n.toLocaleString('en-US');
   const fmtT=h=>{const m=Math.round(h*60);return m<60?m+' min':Math.floor(m/60)+' hr'+(m%60?' '+m%60+' min':'')};
@@ -691,11 +701,19 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
     $('#cMilesWrap').hidden=!($('#cFrom').value==='other'||$('#cTo').value==='other');
     const miles=estMiles(); const n=Math.max(1,parseInt($('#cQty').value)||1);
     if(!miles){lastEst=null;$('#cOut').innerHTML='<span>Pick pickup and destination cities to see an estimate.</span>';return}
-    const q=quote(miles,n);
-    lastEst={...q,miles:Math.round(miles),n};
-    $('#cOut').innerHTML='<div class="big"><b>'+fmt$(q.per)+'</b><span>per vehicle'+(n>1?' · '+fmt$(q.total)+' total for '+n:'')+'</span></div><div class="sub2">About '+Math.round(miles)+' miles one way · about '+fmtT(q.hrs)+' drive · includes driver return trip and chase vehicle</div>';
+    const r=Math.max(0,parseInt($('#cRet').value)||0);
+    const q=quote(miles,n,r);
+    lastEst={...q,miles:Math.round(miles),n,r};
+    const sub='<div class="sub2">About '+Math.round(miles)+' miles one way · about '+fmtT(q.hrs)+' drive · includes driver return trip and chase vehicle</div>';
+    if(q.matched){
+      $('#cOut').innerHTML='<div class="big"><b>'+fmt$(q.total)+'</b><span>total · '+(n+r)+' vehicles</span></div>'
+        +'<div class="sub2" style="color:var(--text)">'+n+' going × '+fmt$(q.outPer)+' &nbsp;+&nbsp; '+r+' coming back × '+fmt$(q.backPer)+'</div>'
+        +'<div class="sub2" style="color:var(--gold-hi)">'+(q.bump?'Matched-move discount applied':'Matched move: '+(n>=r?'return':'outbound')+' vehicles 50% off')+'</div>'+sub;
+    } else {
+      $('#cOut').innerHTML='<div class="big"><b>'+fmt$(q.per)+'</b><span>per vehicle'+(n>1?' · '+fmt$(q.total)+' total for '+n:'')+'</span></div>'+sub;
+    }
   }
-  ['cFrom','cTo','cMiles'].forEach(id=>$('#'+id).addEventListener('input',calcRun));
+  ['cFrom','cTo','cMiles','cRet'].forEach(id=>$('#'+id).addEventListener('input',calcRun));
   ['cFrom','cTo'].forEach(id=>$('#'+id).addEventListener('change',calcRun));
   $('#cQty').addEventListener('input',()=>{qtyEdited=true;calcRun()});
   $('#vehicles').addEventListener('input',()=>{if(qtyEdited)return;const n=$('#vehicles').value.split(/\n+/).filter(x=>x.trim()).length;$('#cQty').value=Math.max(1,n);calcRun()});
@@ -712,7 +730,7 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
 
   function clearForm(){
     ['from','to','name','ph','notes','vehicles','cMiles'].forEach(id => $('#'+id).value = '');
-    $('#cFrom').value='';$('#cTo').value='';$('#cQty').value='1';qtyEdited=false;calcRun();
+    $('#cFrom').value='';$('#cTo').value='';$('#cQty').value='1';$('#cRet').value='0';qtyEdited=false;calcRun();
     const t = new Date(); t.setDate(t.getDate()+1); $('#when').value = t.toISOString().slice(0,10);
     pickService('Dealer trade'); syncCalcVisibility();
     $('#outText').textContent = ''; $('#smsReq').href = 'sms:+18559476446'; $('#mailReq').href = 'mailto:czipfel@zipdriveservices.com';
@@ -740,7 +758,7 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
       'Destination: ' + (v('to')||'—'),
       'Date: ' + dt,
       (()=>{const vl=vehList();return vl.length>1?'Vehicles ('+vl.length+'):\n'+vl.map((x,i)=>'  '+(i+1)+'. '+x).join('\n'):'Vehicle: '+(vl[0]||'TBD')})(),
-      (lastEst&&CALC_SERVICES.includes(svc)) ? 'App estimate: '+fmt$(lastEst.per)+' per vehicle'+(lastEst.n>1?' / '+fmt$(lastEst.total)+' total ('+lastEst.n+' vehicles)':'')+' · ~'+lastEst.miles+' mi (non-contract estimate; final price confirmed by ZIPDRIVE)' : null,
+      (lastEst&&CALC_SERVICES.includes(svc)) ? (lastEst.matched ? 'App estimate (matched move): '+lastEst.n+' going × '+fmt$(lastEst.outPer)+' + '+lastEst.r+' coming back × '+fmt$(lastEst.backPer)+' = '+fmt$(lastEst.total)+' total' : 'App estimate: '+fmt$(lastEst.per)+' per vehicle'+(lastEst.n>1?' / '+fmt$(lastEst.total)+' total ('+lastEst.n+' vehicles)':''))+' · ~'+lastEst.miles+' mi (non-contract estimate; final price confirmed by ZIPDRIVE)' : null,
       v('name') ? 'Name: ' + v('name') : null,
       v('ph') ? 'Phone: ' + v('ph') : null,
       v('notes') ? 'Notes: ' + v('notes') : null
