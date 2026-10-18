@@ -487,7 +487,7 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
         <div class="field" id="cMilesWrap" hidden><label for="cMiles">One-way miles</label><input id="cMiles" type="number" min="1" inputmode="decimal" placeholder="Example: 35"></div>
         <div class="field"><label for="cQty">Vehicles</label><input id="cQty" type="number" min="1" value="1" inputmode="numeric"></div>
         <div class="calc-out" id="cOut"><span>Pick pickup and destination cities to see an estimate.</span></div>
-        <p class="note" style="margin:8px 0 0">Estimate based on driving distance. Your final flat rate is confirmed before we dispatch.</p>
+        <p class="note" style="margin:8px 0 0">Estimate based on driving distance, for moves not covered by a signed service agreement. Contract clients are billed at their agreed rates. ZIPDRIVE Services may adjust the final price, which is confirmed before we dispatch.</p>
       </div>
       <div class="two">
         <div class="field"><label for="name">Your name</label><input id="name" placeholder="Your name" autocomplete="name"></div>
@@ -740,7 +740,7 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
       'Destination: ' + (v('to')||'—'),
       'Date: ' + dt,
       (()=>{const vl=vehList();return vl.length>1?'Vehicles ('+vl.length+'):\n'+vl.map((x,i)=>'  '+(i+1)+'. '+x).join('\n'):'Vehicle: '+(vl[0]||'TBD')})(),
-      (lastEst&&CALC_SERVICES.includes(svc)) ? 'App estimate: '+fmt$(lastEst.per)+' per vehicle'+(lastEst.n>1?' / '+fmt$(lastEst.total)+' total ('+lastEst.n+' vehicles)':'')+' · ~'+lastEst.miles+' mi' : null,
+      (lastEst&&CALC_SERVICES.includes(svc)) ? 'App estimate: '+fmt$(lastEst.per)+' per vehicle'+(lastEst.n>1?' / '+fmt$(lastEst.total)+' total ('+lastEst.n+' vehicles)':'')+' · ~'+lastEst.miles+' mi (non-contract estimate; final price confirmed by ZIPDRIVE)' : null,
       v('name') ? 'Name: ' + v('name') : null,
       v('ph') ? 'Phone: ' + v('ph') : null,
       v('notes') ? 'Notes: ' + v('notes') : null
