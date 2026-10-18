@@ -195,7 +195,7 @@
   /* Results */
   .result-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 10px;
     margin-bottom: 10px;
   }
@@ -214,6 +214,9 @@
   }
 
   .result-item.full { grid-column: 1 / -1; }
+  .result-item { min-width: 0; overflow-wrap: anywhere; }
+  .result-item .result-value { overflow-wrap: normal; white-space: nowrap; }
+  .result-item:not(.highlight):not(.full) .result-value { font-size: clamp(17px, 5vw, 24px); }
 
   .result-label {
     font-size: 11px;
@@ -414,11 +417,29 @@
   <div class="section-label">Trip Details</div>
 
   <div class="input-group">
-    <label>Number of Vehicles</label>
+    <label>Vehicles — Outbound</label>
     <div class="input-row">
       <input type="number" id="vehicles" value="1" min="1" step="1" inputmode="numeric">
       <span class="unit">Vehicles</span>
     </div>
+  </div>
+
+  <div class="input-group">
+    <label>Return Vehicles (matched move)</label>
+    <div class="input-row">
+      <input type="number" id="returns" value="0" min="0" step="1" inputmode="numeric">
+      <span class="unit">Vehicles</span>
+    </div>
+    <p class="input-note">Vehicles coming back on the same trip. Leave 0 for one-way.</p>
+  </div>
+
+  <div class="input-group" id="turn-group" style="display:none">
+    <label>Turnaround Time at Far End</label>
+    <div class="input-row">
+      <input type="number" id="turnaround" value="1" min="0" step="0.25" inputmode="decimal">
+      <span class="unit">hr</span>
+    </div>
+    <p class="input-note">Vehicle swap + condition reports. All drivers and chase paid for this time.</p>
   </div>
 
   <div class="input-group">
@@ -497,9 +518,15 @@
     </div>
 
     <div class="result-item highlight">
-      <div class="result-label">▶ Client Quote — Per Vehicle</div>
+      <div class="result-label" id="res-per-label">▶ Client Quote — Per Vehicle</div>
       <div class="result-value" id="res-quote-per">—</div>
       <div class="result-note" id="res-per-mile">$0.00 / mile</div>
+    </div>
+
+    <div class="result-item highlight" id="res-ret-tile" style="display:none">
+      <div class="result-label">▶ Matched Return — Per Vehicle</div>
+      <div class="result-value" id="res-ret-per">—</div>
+      <div class="result-note" id="res-ret-note">50% off one-way rate</div>
     </div>
 
     <div class="result-item full">
@@ -535,6 +562,8 @@
   const BURDEN = 0.12;               // payroll taxes / workers comp on wages
   const CHASE_VEHICLE_PER_MILE = 0.20; // chase vehicle fuel/charge + wear, round-trip miles
   const MIN_PER_VEHICLE = 65;
+  const RETURN_DISCOUNT = 0.50;        // matched move: smaller leg priced at 50% off one-way rate
+  let lastMatch = null;
   const AVG_SPEED = 50;
 
   const $ = id => document.getElementById(id);
@@ -592,7 +621,7 @@
     });
   });
 
-  $('vehicles').addEventListener('input', calc);
+  ['vehicles','returns','turnaround'].forEach(id => $(id).addEventListener('input', calc));
 
   function calc() {
     const miles    = Math.max(0, parseFloat($('miles').value)    || 0);
@@ -606,40 +635,79 @@
     // Chase driver is 1 person for the whole job — cost split evenly per vehicle
     // Option A (Oct 2026): pay drivers and chase driver for the return trip (round trip = 2 × drive time).
     // Dead head fee retired: the return is already counted. Same formula as the client app estimate.
+    const returns    = Math.max(0, parseInt($('returns').value) || 0);
+    const matched    = returns > 0;
+    const turnHrs    = matched ? Math.max(0, parseFloat($('turnaround').value) || 0) : 0;
+    $('turn-group').style.display = matched ? '' : 'none';
+    $('res-ret-tile').style.display = matched ? '' : 'none';
+
     const rtHours         = totalHours * 2;
     const rtMiles         = miles * 2;
     // True cost (Oct 2026): every driver + chase driver paid round trip, plus payroll burden,
     // plus chase vehicle cost on round-trip miles. Quote = cost x 1.25. Same formula as client app.
-    const driverCostTotal = rtHours * DRIVER_COST * vehicles * (1 + BURDEN);
-    const chaseLabor      = rtHours * CHASE_COST * (1 + BURDEN);
+    // Matched move: drivers needed = larger of outbound/return; everyone also paid turnaround time.
+    const drivers         = Math.max(vehicles, returns);
+    const paidHours       = rtHours + turnHrs;
+    const driverCostTotal = paidHours * DRIVER_COST * drivers * (1 + BURDEN);
+    const chaseLabor      = paidHours * CHASE_COST * (1 + BURDEN);
     const chaseVehicle    = rtMiles * CHASE_VEHICLE_PER_MILE;
     const chaseCostTotal  = chaseLabor + chaseVehicle;
     const totalCost       = driverCostTotal + chaseCostTotal;
 
-    const rawPer      = totalCost * MARKUP / vehicles;
-    const quotePer    = Math.max(Math.ceil(rawPer), MIN_PER_VEHICLE);
-    const quoteTotal  = quotePer * vehicles;
+    // One-way rate for the larger leg (standard formula, no turnaround)
+    const oneWayCost  = rtHours * (DRIVER_COST * drivers + CHASE_COST) * (1 + BURDEN) + chaseVehicle;
+    let quotePer      = Math.max(Math.ceil(oneWayCost * MARKUP / drivers), MIN_PER_VEHICLE);
+    let bump = 0, retPer = 0, bigN = drivers, smallN = 0, quoteTotal;
+    if (!matched) {
+      quoteTotal = quotePer * vehicles;
+    } else {
+      // Option B: larger leg at full one-way rate, smaller leg 50% off.
+      // Floor: whole job must still clear cost x 1.25 and $65/vehicle.
+      smallN = Math.min(vehicles, returns);
+      // If short, spread the shortfall evenly across every vehicle (return stays cheaper than outbound).
+      retPer = Math.max(Math.ceil(quotePer * (1 - RETURN_DISCOUNT)), MIN_PER_VEHICLE);
+      const shortfall = totalCost * MARKUP - (quotePer * bigN + retPer * smallN);
+      bump = shortfall > 0 ? Math.ceil(shortfall / (bigN + smallN)) : 0;
+      quotePer += bump; retPer += bump;
+      quoteTotal = quotePer * bigN + retPer * smallN;
+    }
     const marginAmt   = quoteTotal - totalCost;
+    const outIsBig    = vehicles >= returns;
+    lastMatch = matched ? {vehicles, returns, quotePer, retPer, outIsBig, turnHrs} : null;
 
     $('res-labor').textContent      = fmt(driverCostTotal);
-    $('res-labor-note').textContent = `${totalHours.toFixed(2)} hrs × 2 × $${DRIVER_COST.toFixed(2)} × ${vehicles} driver${vehicles>1?'s':''} + 12% payroll`;
+    $('res-labor-note').textContent = `${totalHours.toFixed(2)} hrs × 2${turnHrs?` + ${turnHrs} hr turnaround`:''} × $${DRIVER_COST.toFixed(2)} × ${drivers} driver${drivers>1?'s':''} + 12% payroll`;
 
     $('res-chase').textContent      = fmt(chaseCostTotal);
-    $('res-chase-note').textContent = `${fmt(chaseLabor)} driver (round trip + 12%) + ${fmt(chaseVehicle)} vehicle (${rtMiles.toFixed(0)} mi × $0.20)`;
+    $('res-chase-note').textContent = `${fmt(chaseLabor)} driver (round trip${turnHrs?' + turnaround':''} + 12%) + ${fmt(chaseVehicle)} vehicle (${rtMiles.toFixed(0)} mi × $0.20)`;
 
     $('res-margin').textContent     = fmt(marginAmt);
-    $('res-margin-label').textContent = 'Gross Profit (cost + 25%)';
+    $('res-margin-label').textContent = matched ? `Gross Profit (${Math.round(marginAmt/totalCost*100)}% over cost)` : 'Gross Profit (cost + 25%)';
 
+    $('res-per-label').textContent  = matched ? `▶ ${outIsBig?'Outbound':'Return'} — Per Vehicle (full rate)` : '▶ Client Quote — Per Vehicle';
     $('res-quote-per').textContent  = fmt(quotePer);
     $('res-per-mile').textContent   = miles > 0 ? `${fmt(quotePer / miles)} per mile` : 'Enter mileage for per-mile rate';
+    if (matched) {
+      $('res-ret-per').textContent  = fmt(retPer);
+      const dir = outIsBig ? 'Return' : 'Outbound';
+      $('res-ret-tile').querySelector('.result-label').textContent = `▶ Matched ${dir} — Per Vehicle`;
+      $('res-ret-note').textContent = bump
+        ? `50% off, + ${fmt(bump)}/vehicle on both legs to keep job at cost + 25%`
+        : (retPer===MIN_PER_VEHICLE && quotePer*(1-RETURN_DISCOUNT)<MIN_PER_VEHICLE ? '$65 minimum' : '50% off one-way rate');
+    }
 
     $('res-quote-total').textContent = fmt(quoteTotal);
-    $('res-total-label').textContent = `Total Quote — ${vehicles} Vehicle${vehicles > 1 ? 's' : ''}`;
-    $('res-total-note').textContent  = (vehicles > 1
-      ? `${fmt(quotePer)} × ${vehicles} vehicles · round trip, chase shared`
-      : `Round trip incl. chase driver + vehicle`) + ` · true cost ${fmt(totalCost)}${quotePer===MIN_PER_VEHICLE?' · $65 minimum':''}`;
+    const allN = vehicles + returns;
+    $('res-total-label').textContent = matched
+      ? `Total Quote — ${allN} Vehicles (${vehicles} out / ${returns} back)`
+      : `Total Quote — ${vehicles} Vehicle${vehicles > 1 ? 's' : ''}`;
+    $('res-total-note').textContent  = (matched
+      ? `${bigN} × ${fmt(quotePer)} + ${smallN} × ${fmt(retPer)} · one chase, one round trip`
+      : vehicles > 1
+        ? `${fmt(quotePer)} × ${vehicles} vehicles · round trip, chase shared`
+        : `Round trip incl. chase driver + vehicle`) + ` · true cost ${fmt(totalCost)}${!matched&&quotePer===MIN_PER_VEHICLE?' · $65 minimum':''}`;
 
-    const effectiveRate = totalHours > 0 ? (quoteTotal / (totalHours * 2)) : 0;
+    const effectiveRate = totalHours > 0 ? (quoteTotal / paidHours) : 0;
     $('res-bill-rate').textContent = `${fmt(effectiveRate)} / hr (all-in)`;
   }
 
@@ -658,12 +726,24 @@
 
     let text = `ZIPDRIVE SERVICES — RATE QUOTE\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-    text += `Vehicles:       ${vehicles}\n`;
+    if (lastMatch) {
+      text += `Matched move:   ${lastMatch.vehicles} out / ${lastMatch.returns} back\n`;
+    } else {
+      text += `Vehicles:       ${vehicles}\n`;
+    }
     text += `Trip Mileage:   ${miles} miles\n`;
     text += `Drive Time:     ${timeStr}\n`;
     if (deadHeadOn) text += `Dead Head Fee:  $125.00\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-    text += `Per Vehicle:    ${perVehicle}\n`;
+    if (lastMatch) {
+      const m = lastMatch;
+      const [bigLbl, smLbl] = m.outIsBig ? ['Outbound','Return'] : ['Return','Outbound'];
+      const bigN = Math.max(m.vehicles, m.returns), smN = Math.min(m.vehicles, m.returns);
+      text += `${bigLbl}:${' '.repeat(Math.max(1,15-bigLbl.length))}${bigN} × ${fmt(m.quotePer)}\n`;
+      text += `${smLbl}:${' '.repeat(Math.max(1,15-smLbl.length))}${smN} × ${fmt(m.retPer)} (matched)\n`;
+    } else {
+      text += `Per Vehicle:    ${perVehicle}\n`;
+    }
     text += `TOTAL QUOTE:    ${total}\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━━\n`;
     text += `Non-contract rate. Clients with a signed service\nagreement are billed at their contract rates.\nZIPDRIVE Services may adjust the final price.\n`;
