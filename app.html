@@ -679,7 +679,7 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
   function estMiles(){const f=$('#cFrom').value,t=$('#cTo').value;
     if(f==='other'||t==='other'){const m=parseFloat($('#cMiles').value);return m>0?m:null}
     if(f===''||t==='')return null; if(f===t)return RATE.sameCityMiles;
-    const d=hav(CITIES[+f],CITIES[+t]);return Math.max(RATE.sameCityMiles,d*(d<30?RATE.roadFactor:1.13))}
+    const d=hav(CITIES[+f],CITIES[+t]);return Math.round(Math.max(RATE.sameCityMiles,d*(d<30?RATE.roadFactor:1.13)))}
   function quote(miles,n,r=0){const hrs=miles/RATE.mph;const rt=hrs*2;
     // True cost: round-trip hours for every driver plus the chase driver, with payroll burden,
     // plus the chase vehicle's round-trip miles. Price = cost x 1.25 (25% on top of cost).

@@ -629,7 +629,8 @@
     const mins     = Math.max(0, parseFloat($('minutes').value)  || 0);
     const vehicles = Math.max(1, parseInt($('vehicles').value)   || 1);
 
-    const totalHours  = hours + (mins / 60);
+    // Auto time: use exact miles / 50 mph (matches the public app). Manual override uses entered time.
+    const totalHours  = userEditedTime ? hours + (mins / 60) : miles / AVG_SPEED;
 
     // Per-vehicle driver cost + 1 chase driver cost (shared across all vehicles, billed per vehicle as fraction)
     // Chase driver is 1 person for the whole job — cost split evenly per vehicle
