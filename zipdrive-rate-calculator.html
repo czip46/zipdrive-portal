@@ -407,7 +407,7 @@
 
   <div class="margin-pill">
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-    25% Margin Built In · $20.00/hr Driver · $20.00/hr Chase
+    25% Margin · $20.00/hr Driver · $20.00/hr Chase · Round trip · $65/vehicle min
   </div>
 
   <!-- TRIP DETAILS -->
@@ -455,9 +455,9 @@
   </div>
 
   <!-- DEAD HEAD -->
-  <div class="section-label">Additional Fees</div>
+  <div class="section-label" style="display:none">Additional Fees</div>
 
-  <div class="toggle-row" id="dh-toggle">
+  <div class="toggle-row" id="dh-toggle" style="display:none">
     <div class="toggle-label">
       <strong>Dead Head Fee</strong>
       <span>$125.00 flat — return trip with no vehicle</span>
@@ -532,6 +532,7 @@
   const CHASE_COST  = 20.00;
   const DEAD_HEAD   = 125.00;
   const MARGIN = 0.25;
+  const MIN_PER_VEHICLE = 65;
   const AVG_SPEED = 50;
 
   const $ = id => document.getElementById(id);
@@ -601,23 +602,26 @@
 
     // Per-vehicle driver cost + 1 chase driver cost (shared across all vehicles, billed per vehicle as fraction)
     // Chase driver is 1 person for the whole job — cost split evenly per vehicle
-    const laborCostTotal  = totalHours * DRIVER_COST * vehicles;
-    const chaseCostTotal  = totalHours * CHASE_COST;
-    const deadHeadFee     = deadHeadOn ? DEAD_HEAD : 0;
-    const totalCost       = laborCostTotal + chaseCostTotal + deadHeadFee;
+    // Option A (Oct 2026): pay drivers and chase driver for the return trip (round trip = 2 × drive time).
+    // Dead head fee retired: the return is already counted. Same formula as the client app estimate.
+    const rtHours         = totalHours * 2;
+    const laborCostTotal  = rtHours * DRIVER_COST * vehicles;
+    const chaseCostTotal  = rtHours * CHASE_COST;
+    const totalCost       = laborCostTotal + chaseCostTotal;
 
-    // Quote total with 25% margin
-    const quoteTotal  = totalCost / (1 - MARGIN);
+    // Quote with 25% margin, rounded up per vehicle, $65/vehicle minimum (matches client app)
+    const rawPer      = totalCost / (1 - MARGIN) / vehicles;
+    const quotePer    = Math.max(Math.ceil(rawPer), MIN_PER_VEHICLE);
+    const quoteTotal  = quotePer * vehicles;
     const marginAmt   = quoteTotal - totalCost;
-    const quotePer    = quoteTotal / vehicles;
 
     // Display labor = per-vehicle driver cost for readability
-    const laborCostPerVehicle = totalHours * DRIVER_COST;
+    const laborCostPerVehicle = rtHours * DRIVER_COST;
     $('res-labor').textContent      = fmt(laborCostPerVehicle);
-    $('res-labor-note').textContent = `${totalHours.toFixed(2)} hrs × $${DRIVER_COST.toFixed(2)}/vehicle`;
+    $('res-labor-note').textContent = `${totalHours.toFixed(2)} hrs × 2 (round trip) × $${DRIVER_COST.toFixed(2)}/vehicle`;
 
     $('res-chase').textContent      = fmt(chaseCostTotal);
-    $('res-chase-note').textContent = `${totalHours.toFixed(2)} hrs × $${CHASE_COST.toFixed(2)} · 1 driver`;
+    $('res-chase-note').textContent = `${totalHours.toFixed(2)} hrs × 2 (round trip) × $${CHASE_COST.toFixed(2)} · 1 driver`;
 
     $('res-margin').textContent     = fmt(marginAmt);
 
@@ -627,10 +631,10 @@
     $('res-quote-total').textContent = fmt(quoteTotal);
     $('res-total-label').textContent = `Total Quote — ${vehicles} Vehicle${vehicles > 1 ? 's' : ''}`;
     $('res-total-note').textContent  = vehicles > 1
-      ? `${fmt(quotePer)} × ${vehicles} vehicles${deadHeadOn ? ' + dead head' : ' (chase cost shared)'}`
-      : deadHeadOn ? 'Includes chase driver + dead head fee' : 'Includes 1 chase driver';
+      ? `${fmt(quotePer)} × ${vehicles} vehicles · round trip, chase shared${quotePer===MIN_PER_VEHICLE?' · $65 minimum':''}`
+      : `Round trip incl. 1 chase driver${quotePer===MIN_PER_VEHICLE?' · $65 minimum':''}`;
 
-    const effectiveRate = totalHours > 0 ? (quoteTotal / totalHours) : 0;
+    const effectiveRate = totalHours > 0 ? (quoteTotal / (totalHours * 2)) : 0;
     $('res-bill-rate').textContent = `${fmt(effectiveRate)} / hr (all-in)`;
   }
 
