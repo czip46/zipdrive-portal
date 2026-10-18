@@ -407,7 +407,7 @@
 
   <div class="margin-pill">
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-    $20/hr Driver · Chase $20/hr (multi) or $15/hr (single) · Round trip · Multi: 25% margin · Single: labor + 25% · $65/vehicle min
+    $20/hr Driver &amp; Chase · +12% payroll · Chase vehicle $0.20/mi · Round trip · Price = cost + 25% · $65/vehicle min
   </div>
 
   <!-- TRIP DETAILS -->
@@ -491,7 +491,7 @@
     </div>
 
     <div class="result-item">
-      <div class="result-label" id="res-margin-label">Margin (25%)</div>
+      <div class="result-label" id="res-margin-label">Gross Profit (cost + 25%)</div>
       <div class="result-value" id="res-margin">—</div>
       <div class="result-note">Gross profit</div>
     </div>
@@ -531,10 +531,10 @@
   const DRIVER_COST = 20.00;
   const CHASE_COST  = 20.00;
   const DEAD_HEAD   = 125.00;
-  const MARGIN = 0.25;
+  const MARKUP = 1.25;               // price = true cost x 1.25 (25% on top of cost)
+  const BURDEN = 0.12;               // payroll taxes / workers comp on wages
+  const CHASE_VEHICLE_PER_MILE = 0.20; // chase vehicle fuel/charge + wear, round-trip miles
   const MIN_PER_VEHICLE = 65;
-  const SINGLE_CHASE_COST = 15.00;   // single-vehicle jobs: lower chase rate
-  const SINGLE_MARKUP = 1.25;        // single-vehicle jobs: price = labor x 1.25
   const AVG_SPEED = 50;
 
   const $ = id => document.getElementById(id);
@@ -607,38 +607,37 @@
     // Option A (Oct 2026): pay drivers and chase driver for the return trip (round trip = 2 × drive time).
     // Dead head fee retired: the return is already counted. Same formula as the client app estimate.
     const rtHours         = totalHours * 2;
-    const single          = vehicles === 1;
-    const chaseRate       = single ? SINGLE_CHASE_COST : CHASE_COST;
-    const laborCostTotal  = rtHours * DRIVER_COST * vehicles;
-    const chaseCostTotal  = rtHours * chaseRate;
-    const totalCost       = laborCostTotal + chaseCostTotal;
+    const rtMiles         = miles * 2;
+    // True cost (Oct 2026): every driver + chase driver paid round trip, plus payroll burden,
+    // plus chase vehicle cost on round-trip miles. Quote = cost x 1.25. Same formula as client app.
+    const driverCostTotal = rtHours * DRIVER_COST * vehicles * (1 + BURDEN);
+    const chaseLabor      = rtHours * CHASE_COST * (1 + BURDEN);
+    const chaseVehicle    = rtMiles * CHASE_VEHICLE_PER_MILE;
+    const chaseCostTotal  = chaseLabor + chaseVehicle;
+    const totalCost       = driverCostTotal + chaseCostTotal;
 
-    // Single vehicle: labor x 1.25. Multi-vehicle: 25% margin (cost / 0.75).
-    // Rounded up per vehicle, $65/vehicle minimum (matches client app)
-    const rawPer      = single ? totalCost * SINGLE_MARKUP : totalCost / (1 - MARGIN) / vehicles;
+    const rawPer      = totalCost * MARKUP / vehicles;
     const quotePer    = Math.max(Math.ceil(rawPer), MIN_PER_VEHICLE);
     const quoteTotal  = quotePer * vehicles;
     const marginAmt   = quoteTotal - totalCost;
 
-    // Display labor = per-vehicle driver cost for readability
-    const laborCostPerVehicle = rtHours * DRIVER_COST;
-    $('res-labor').textContent      = fmt(laborCostPerVehicle);
-    $('res-labor-note').textContent = `${totalHours.toFixed(2)} hrs × 2 (round trip) × $${DRIVER_COST.toFixed(2)}/vehicle`;
+    $('res-labor').textContent      = fmt(driverCostTotal);
+    $('res-labor-note').textContent = `${totalHours.toFixed(2)} hrs × 2 × $${DRIVER_COST.toFixed(2)} × ${vehicles} driver${vehicles>1?'s':''} + 12% payroll`;
 
     $('res-chase').textContent      = fmt(chaseCostTotal);
-    $('res-chase-note').textContent = `${totalHours.toFixed(2)} hrs × 2 (round trip) × $${chaseRate.toFixed(2)} · 1 driver${single ? ' (single-unit rate)' : ''}`;
+    $('res-chase-note').textContent = `${fmt(chaseLabor)} driver (round trip + 12%) + ${fmt(chaseVehicle)} vehicle (${rtMiles.toFixed(0)} mi × $0.20)`;
 
     $('res-margin').textContent     = fmt(marginAmt);
-    $('res-margin-label').textContent = single ? 'Gross Profit (labor + 25%)' : 'Margin (25%)';
+    $('res-margin-label').textContent = 'Gross Profit (cost + 25%)';
 
     $('res-quote-per').textContent  = fmt(quotePer);
     $('res-per-mile').textContent   = miles > 0 ? `${fmt(quotePer / miles)} per mile` : 'Enter mileage for per-mile rate';
 
     $('res-quote-total').textContent = fmt(quoteTotal);
     $('res-total-label').textContent = `Total Quote — ${vehicles} Vehicle${vehicles > 1 ? 's' : ''}`;
-    $('res-total-note').textContent  = vehicles > 1
-      ? `${fmt(quotePer)} × ${vehicles} vehicles · round trip, chase shared${quotePer===MIN_PER_VEHICLE?' · $65 minimum':''}`
-      : `Round trip incl. 1 chase driver${quotePer===MIN_PER_VEHICLE?' · $65 minimum':''}`;
+    $('res-total-note').textContent  = (vehicles > 1
+      ? `${fmt(quotePer)} × ${vehicles} vehicles · round trip, chase shared`
+      : `Round trip incl. chase driver + vehicle`) + ` · true cost ${fmt(totalCost)}${quotePer===MIN_PER_VEHICLE?' · $65 minimum':''}`;
 
     const effectiveRate = totalHours > 0 ? (quoteTotal / (totalHours * 2)) : 0;
     $('res-bill-rate').textContent = `${fmt(effectiveRate)} / hr (all-in)`;

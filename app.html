@@ -20,9 +20,7 @@
 <link rel="icon" type="image/png" href="zipdrive-icon.png">
 <link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22ZIPDRIVE%20Services%22%2C%22short_name%22%3A%22ZIPDRIVE%22%2C%22start_url%22%3A%22.%2Fapp.html%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230B0A0E%22%2C%22theme_color%22%3A%22%230B0A0E%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22https%3A%2F%2Fczip46.github.io%2Fzipdrive-portal%2Fzipdrive-icon-512.png%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
-<title>ZIPDRIVE Services App</title>
-</head><body>
-
+<title>ZIPDRIVE Services App</title></head><body>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700;800&family=Figtree:wght@400;500;600;700&display=swap">
 <style>
@@ -669,7 +667,7 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
   }
 
   /* ---- Instant estimate (business moves) ---- */
-  const RATE={driver:20,chase:20,singleChase:15,singleMarkup:1.25,margin:0.25,mph:50,minPerVehicle:65,roadFactor:1.2,sameCityMiles:8};
+  const RATE={driver:20,chase:20,burden:0.12,chaseVehiclePerMile:0.20,markup:1.25,mph:50,minPerVehicle:65,roadFactor:1.2,sameCityMiles:8};
   const CALC_SERVICES=['Dealer trade','Fleet repositioning','Auction run','Sold vehicle delivery'];
   const CITIES=[['Columbus',39.9612,-82.9988],['Canal Winchester',39.8428,-82.8046],['Circleville',39.6006,-82.9460],['Delaware',40.2987,-83.0680],['Dublin',40.0992,-83.1141],['Gahanna',40.0192,-82.8793],['Grove City',39.8815,-83.0930],['Groveport',39.8784,-82.8838],['Hilliard',40.0334,-83.1582],['Johnstown',40.1537,-82.6852],['Lancaster',39.7137,-82.5993],['Lewis Center',40.1984,-83.0102],['London',39.8865,-83.4483],['Manheim Ohio (Grove City)',39.8560,-83.0560],['Marion',40.5887,-83.1285],['Marysville',40.2364,-83.3671],['Mount Vernon',40.3934,-82.4857],['Newark',40.0581,-82.4013],['Obetz',39.8790,-82.9507],['Pataskala',39.9956,-82.6743],['Pickerington',39.8842,-82.7535],['Plain City',40.1075,-83.2674],['Powell',40.1578,-83.0752],['Reynoldsburg',39.9548,-82.8121],['Sunbury',40.2426,-82.8591],['Upper Arlington',40.0270,-83.0624],['Westerville',40.1262,-82.9291],['Worthington',40.0931,-83.0180],['CMH John Glenn Airport',39.9980,-82.8919],['Chillicothe',39.3331,-82.9824],['Mansfield',40.7584,-82.5154],['Springfield',39.9242,-83.8088],['Zanesville',39.9403,-82.0132],['Akron',41.0814,-81.5190],['Cincinnati',39.1031,-84.5120],['Cleveland',41.4993,-81.6944],['Dayton',39.7589,-84.1916],['Toledo',41.6528,-83.5379]];
   const opts='<option value="">Choose city</option>'+CITIES.map((c,i)=>'<option value="'+i+'">'+c[0]+'</option>').join('')+'<option value="other">Other (enter miles)</option>';
@@ -680,9 +678,11 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
     if(f===''||t==='')return null; if(f===t)return RATE.sameCityMiles;
     const d=hav(CITIES[+f],CITIES[+t]);return Math.max(RATE.sameCityMiles,d*(d<30?RATE.roadFactor:1.13))}
   function quote(miles,n){const hrs=miles/RATE.mph;const rt=hrs*2;
-    let per;
-    if(n===1){const cost=rt*RATE.driver+rt*RATE.singleChase;per=Math.ceil(cost*RATE.singleMarkup)}
-    else{const cost=rt*RATE.driver*n+rt*RATE.chase;per=Math.ceil(cost/(1-RATE.margin)/n)}
+    // True cost: round-trip hours for every driver plus the chase driver, with payroll burden,
+    // plus the chase vehicle's round-trip miles. Price = cost x 1.25 (25% on top of cost).
+    const labor=rt*(RATE.driver*n+RATE.chase)*(1+RATE.burden);
+    const vehicle=miles*2*RATE.chaseVehiclePerMile;
+    let per=Math.ceil((labor+vehicle)*RATE.markup/n);
     per=Math.max(per,RATE.minPerVehicle);return {per,total:per*n,hrs}}
   let lastEst=null; let qtyEdited=false;
   const fmt$=n=>'$'+n.toLocaleString('en-US');
@@ -693,7 +693,7 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
     if(!miles){lastEst=null;$('#cOut').innerHTML='<span>Pick pickup and destination cities to see an estimate.</span>';return}
     const q=quote(miles,n);
     lastEst={...q,miles:Math.round(miles),n};
-    $('#cOut').innerHTML='<div class="big"><b>'+fmt$(q.per)+'</b><span>per vehicle'+(n>1?' · '+fmt$(q.total)+' total for '+n:'')+'</span></div><div class="sub2">About '+Math.round(miles)+' miles one way · about '+fmtT(q.hrs)+' drive · includes driver return trip</div>';
+    $('#cOut').innerHTML='<div class="big"><b>'+fmt$(q.per)+'</b><span>per vehicle'+(n>1?' · '+fmt$(q.total)+' total for '+n:'')+'</span></div><div class="sub2">About '+Math.round(miles)+' miles one way · about '+fmtT(q.hrs)+' drive · includes driver return trip and chase vehicle</div>';
   }
   ['cFrom','cTo','cMiles'].forEach(id=>$('#'+id).addEventListener('input',calcRun));
   ['cFrom','cTo'].forEach(id=>$('#'+id).addEventListener('change',calcRun));
@@ -762,5 +762,4 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
 
 })();
 </script>
-
 </body></html>
