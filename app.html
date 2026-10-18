@@ -232,6 +232,17 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--purple-h
 .confirm span{font-weight:600}
 .confirm .acts{display:flex;flex-wrap:wrap;gap:8px}
 input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity:1}
+.calc{margin:4px 0 16px;padding:14px;border-radius:14px;background:linear-gradient(135deg,rgba(91,45,142,.35),rgba(91,45,142,.1));border:1px solid #4b2e70}
+.calc-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.calc-tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:rgba(201,168,76,.15);color:var(--gold-hi)}
+.chk{display:flex;gap:10px;align-items:center;text-transform:none;letter-spacing:0;font-size:14px;color:var(--text);font-weight:600;margin-bottom:14px;cursor:pointer}
+.chk input{width:20px;height:20px;flex:none;accent-color:var(--gold);padding:0}
+.chk small{display:block;font-weight:400;font-size:12px;color:var(--muted)}
+.calc-out{padding:12px 14px;border-radius:12px;background:var(--black);border:1px solid var(--line);color:var(--muted);font-size:14px}
+.calc-out .big{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.calc-out .big b{font-family:var(--display);font-size:32px;font-weight:800;color:var(--gold-hi);line-height:1}
+.calc-out .big span{color:var(--text);font-weight:600}
+.calc-out .sub2{margin-top:6px;font-size:12.5px;color:var(--muted)}
 .vhint{font-size:12.5px;color:var(--muted)}
 #vehicles{font-family:inherit;line-height:1.5}
 .vhead{display:grid;grid-template-columns:1.5fr 1fr 34px;gap:6px;font-size:11px;color:var(--muted);font-weight:600}
@@ -455,6 +466,7 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
           <button type="button" aria-pressed="false">Car pickup &amp; delivery</button>
           <button type="button" aria-pressed="false">Oil change concierge</button>
           <button type="button" aria-pressed="false">Auction run</button>
+          <button type="button" aria-pressed="false">Sold vehicle delivery</button>
         </div>
       </div>
 
@@ -467,6 +479,20 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
         <label for="vehicles">Vehicles · one per line</label>
         <textarea id="vehicles" name="zd-vehicle-list" rows="4" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" placeholder="Example: U4471 2022 Honda CR-V EX"></textarea>
         <span class="vhint">Stock # then year, make, model. Paste a whole list from your DMS or type one per line.</span>
+      </div>
+      <div class="calc" id="calc">
+        <div class="calc-h"><span class="eyebrow">Instant estimate</span><span class="calc-tag">Business moves</span></div>
+        <div class="two">
+          <div class="field"><label for="cFrom">Pickup city</label><select id="cFrom"></select></div>
+          <div class="field"><label for="cTo">Destination city</label><select id="cTo"></select></div>
+        </div>
+        <div class="field" id="cMilesWrap" hidden><label for="cMiles">One-way miles</label><input id="cMiles" type="number" min="1" inputmode="decimal" placeholder="Example: 35"></div>
+        <div class="two">
+          <div class="field"><label for="cQty">Vehicles</label><input id="cQty" type="number" min="1" value="1" inputmode="numeric"></div>
+          <label class="chk" for="cOne"><input type="checkbox" id="cOne"><span>One-way, no return vehicle<small>+$125 return trip</small></span></label>
+        </div>
+        <div class="calc-out" id="cOut"><span>Pick pickup and destination cities to see an estimate.</span></div>
+        <p class="note" style="margin:8px 0 0">Estimate based on driving distance. Your final flat rate is confirmed before we dispatch.</p>
       </div>
       <div class="two">
         <div class="field"><label for="name">Your name</label><input id="name" placeholder="Your name" autocomplete="name"></div>
@@ -631,11 +657,12 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
 
   // Quote builder
   const svcInfo = {
-    'Dealer trade': ['Quoted','Flat rate per move, quoted by route. Confirmed before we dispatch.'],
+    'Dealer trade': ['Quoted','Flat rate per move. Use the instant estimate below; confirmed before we dispatch.'],
     'Fleet repositioning': ['Quoted','Per-move flat rate. Multi-vehicle and recurring routes available.'],
     'Car pickup & delivery': ['From $65','Columbus-area residential moves. Exact rate confirmed before dispatch.'],
     'Oil change concierge': ['$50 + oil','Concierge fee plus the cost of the oil change. Powell and Dublin.'],
-    'Auction run': ['Quoted','Contact for a quote on single units or weekly routes.']
+    'Auction run': ['Quoted','Single units or weekly routes. Use the instant estimate below.'],
+    'Sold vehicle delivery': ['Quoted','Deliver a sold unit to your customer\'s home or office.']
   };
   let svc = 'Dealer trade';
   function pickService(name){
@@ -643,15 +670,51 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
     $$('#svcSeg button').forEach(b => b.setAttribute('aria-pressed', b.textContent.trim() === name));
     $('#estVal').textContent = svcInfo[name][0]; $('#estNote').textContent = svcInfo[name][1];
   }
-  $$('#svcSeg button').forEach(b => b.addEventListener('click', () => pickService(b.textContent.trim())));
+
+  /* ---- Instant estimate (business moves) ---- */
+  const RATE={driver:20,chase:20,deadHead:125,margin:0.25,mph:50,minPerVehicle:65,roadFactor:1.2,sameCityMiles:8};
+  const CALC_SERVICES=['Dealer trade','Fleet repositioning','Auction run','Sold vehicle delivery'];
+  const CITIES=[['Columbus',39.9612,-82.9988],['Canal Winchester',39.8428,-82.8046],['Circleville',39.6006,-82.9460],['Delaware',40.2987,-83.0680],['Dublin',40.0992,-83.1141],['Gahanna',40.0192,-82.8793],['Grove City',39.8815,-83.0930],['Groveport',39.8784,-82.8838],['Hilliard',40.0334,-83.1582],['Johnstown',40.1537,-82.6852],['Lancaster',39.7137,-82.5993],['Lewis Center',40.1984,-83.0102],['London',39.8865,-83.4483],['Manheim Ohio (Grove City)',39.8560,-83.0560],['Marion',40.5887,-83.1285],['Marysville',40.2364,-83.3671],['Mount Vernon',40.3934,-82.4857],['Newark',40.0581,-82.4013],['Obetz',39.8790,-82.9507],['Pataskala',39.9956,-82.6743],['Pickerington',39.8842,-82.7535],['Plain City',40.1075,-83.2674],['Powell',40.1578,-83.0752],['Reynoldsburg',39.9548,-82.8121],['Sunbury',40.2426,-82.8591],['Upper Arlington',40.0270,-83.0624],['Westerville',40.1262,-82.9291],['Worthington',40.0931,-83.0180],['CMH John Glenn Airport',39.9980,-82.8919],['Chillicothe',39.3331,-82.9824],['Mansfield',40.7584,-82.5154],['Springfield',39.9242,-83.8088],['Zanesville',39.9403,-82.0132],['Akron',41.0814,-81.5190],['Cincinnati',39.1031,-84.5120],['Cleveland',41.4993,-81.6944],['Dayton',39.7589,-84.1916],['Toledo',41.6528,-83.5379]];
+  const opts='<option value="">Choose city</option>'+CITIES.map((c,i)=>'<option value="'+i+'">'+c[0]+'</option>').join('')+'<option value="other">Other (enter miles)</option>';
+  $('#cFrom').innerHTML=opts; $('#cTo').innerHTML=opts;
+  function hav(a,b){const R=3958.8,r=x=>x*Math.PI/180;const dLa=r(b[1]-a[1]),dLo=r(b[2]-a[2]);const h=Math.sin(dLa/2)**2+Math.cos(r(a[1]))*Math.cos(r(b[1]))*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
+  function estMiles(){const f=$('#cFrom').value,t=$('#cTo').value;
+    if(f==='other'||t==='other'){const m=parseFloat($('#cMiles').value);return m>0?m:null}
+    if(f===''||t==='')return null; if(f===t)return RATE.sameCityMiles;
+    return Math.max(RATE.sameCityMiles,hav(CITIES[+f],CITIES[+t])*RATE.roadFactor)}
+  function quote(miles,n,oneWay){const hrs=miles/RATE.mph;const cost=hrs*RATE.driver*n+hrs*RATE.chase+(oneWay?RATE.deadHead:0);
+    let per=Math.ceil(cost/(1-RATE.margin)/n);per=Math.max(per,RATE.minPerVehicle);return {per,total:per*n,hrs}}
+  let lastEst=null; let qtyEdited=false;
+  const fmt$=n=>'$'+n.toLocaleString('en-US');
+  const fmtT=h=>{const m=Math.round(h*60);return m<60?m+' min':Math.floor(m/60)+' hr'+(m%60?' '+m%60+' min':'')};
+  function calcRun(){
+    $('#cMilesWrap').hidden=!($('#cFrom').value==='other'||$('#cTo').value==='other');
+    const miles=estMiles(); const n=Math.max(1,parseInt($('#cQty').value)||1);
+    if(!miles){lastEst=null;$('#cOut').innerHTML='<span>Pick pickup and destination cities to see an estimate.</span>';return}
+    const q=quote(miles,n,$('#cOne').checked);
+    lastEst={...q,miles:Math.round(miles),n,oneWay:$('#cOne').checked};
+    $('#cOut').innerHTML='<div class="big"><b>'+fmt$(q.per)+'</b><span>per vehicle'+(n>1?' · '+fmt$(q.total)+' total for '+n:'')+'</span></div><div class="sub2">About '+Math.round(miles)+' miles one way · about '+fmtT(q.hrs)+' drive'+($('#cOne').checked?' · includes one-way return fee':'')+'</div>';
+  }
+  ['cFrom','cTo','cMiles','cOne'].forEach(id=>$('#'+id).addEventListener('input',calcRun));
+  ['cFrom','cTo','cOne'].forEach(id=>$('#'+id).addEventListener('change',calcRun));
+  $('#cQty').addEventListener('input',()=>{qtyEdited=true;calcRun()});
+  $('#vehicles').addEventListener('input',()=>{if(qtyEdited)return;const n=$('#vehicles').value.split(/\n+/).filter(x=>x.trim()).length;$('#cQty').value=Math.max(1,n);calcRun()});
+  // prefill from/to text when cities chosen and boxes empty
+  const isCityText=v=>!v.trim()||CITIES.some(c=>c[0]===v.trim());
+  $('#cFrom').addEventListener('change',()=>{const f=$('#cFrom').value;if(f!==''&&f!=='other'&&isCityText($('#from').value))$('#from').value=CITIES[+f][0]});
+  $('#cTo').addEventListener('change',()=>{const t=$('#cTo').value;if(t!==''&&t!=='other'&&isCityText($('#to').value))$('#to').value=CITIES[+t][0]});
+  function syncCalcVisibility(){const on=CALC_SERVICES.includes(svc);$('#calc').hidden=!on}
+  $$('#svcSeg button').forEach(b => b.addEventListener('click', () => {pickService(b.textContent.trim());syncCalcVisibility()}));
+  syncCalcVisibility();
   const d = new Date(); d.setDate(d.getDate()+1); $('#when').value = d.toISOString().slice(0,10);
 
   const vehList=()=>$('#vehicles').value.split(/\n+/).map(x=>x.trim()).filter(Boolean).map(l=>{const m=l.match(/^([A-Z]{0,3}-?\d{3,6}[A-Z]?)[\s,\t]+(.+)$/i);return (m&&!/^(19|20)\d{2}$/.test(m[1]))?m[2].trim()+' · Stk '+m[1].toUpperCase():l});
 
   function clearForm(){
-    ['from','to','name','ph','notes','vehicles'].forEach(id => $('#'+id).value = '');
+    ['from','to','name','ph','notes','vehicles','cMiles'].forEach(id => $('#'+id).value = '');
+    $('#cFrom').value='';$('#cTo').value='';$('#cQty').value='1';$('#cOne').checked=false;qtyEdited=false;calcRun();
     const t = new Date(); t.setDate(t.getDate()+1); $('#when').value = t.toISOString().slice(0,10);
-    pickService('Dealer trade');
+    pickService('Dealer trade'); syncCalcVisibility();
     $('#outText').textContent = ''; $('#smsReq').href = 'sms:+18559476446'; $('#mailReq').href = 'mailto:czipfel@zipdriveservices.com';
     $('#out').hidden = true; $('#clearConfirm').hidden = true;
     const hint = document.querySelector('#qform .note'); if (hint) hint.hidden = true;
@@ -677,6 +740,7 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
       'Destination: ' + (v('to')||'—'),
       'Date: ' + dt,
       (()=>{const vl=vehList();return vl.length>1?'Vehicles ('+vl.length+'):\n'+vl.map((x,i)=>'  '+(i+1)+'. '+x).join('\n'):'Vehicle: '+(vl[0]||'TBD')})(),
+      (lastEst&&CALC_SERVICES.includes(svc)) ? 'App estimate: '+fmt$(lastEst.per)+' per vehicle'+(lastEst.n>1?' / '+fmt$(lastEst.total)+' total ('+lastEst.n+' vehicles)':'')+' · ~'+lastEst.miles+' mi'+(lastEst.oneWay?' · one-way':'') : null,
       v('name') ? 'Name: ' + v('name') : null,
       v('ph') ? 'Phone: ' + v('ph') : null,
       v('notes') ? 'Notes: ' + v('notes') : null
