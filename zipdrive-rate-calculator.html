@@ -694,7 +694,8 @@
       $('res-ret-tile').querySelector('.result-label').textContent = `▶ Matched ${dir} — Per Vehicle`;
       $('res-ret-note').textContent = bump
         ? `50% off, + ${fmt(bump)}/vehicle on both legs to keep job at cost + 25%`
-        : (retPer===MIN_PER_VEHICLE && quotePer*(1-RETURN_DISCOUNT)<MIN_PER_VEHICLE ? '$65 minimum' : '50% off one-way rate');
+        : (retPer >= quotePer ? '$65 minimum per vehicle, no discount on this route'
+          : `${Math.round((1-retPer/quotePer)*100)}% off one-way rate${retPer===MIN_PER_VEHICLE?' ($65 minimum)':''}`);
     }
 
     $('res-quote-total').textContent = fmt(quoteTotal);

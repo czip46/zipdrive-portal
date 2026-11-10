@@ -360,7 +360,7 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
   <section class="screen" id="services" data-tab="services" hidden>
     <span class="eyebrow">Services</span>
     <h2 class="h2">One call. One rate. Done.</h2>
-    <p class="lede">Every move is flat rate, confirmed before dispatch, with primary insurance on the vehicle. Business moves get an instant estimate on the Quote tab, and cars coming back on the same trip are 50% off.</p>
+    <p class="lede">Every move is flat rate, confirmed before dispatch, with primary insurance on the vehicle. Business moves get an instant estimate on the Quote tab, and cars coming back on the same trip are up to 50% off ($65 minimum per vehicle).</p>
 
     <article class="svc" id="svc-dealer">
       <button class="svc-head" aria-expanded="false">
@@ -444,7 +444,7 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
         <ul>
           <li>Single units or recurring weekly routes</li>
           <li>Multiple vehicles coordinated in the same day</li>
-          <li>Bring units back on the same trip at 50% off</li>
+          <li>Bring units back on the same trip for up to 50% off</li>
         </ul>
         <button class="btn btn-gold" data-go="quote" data-svc="Auction run">Request an auction run</button>
       </div>
@@ -499,7 +499,7 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
           <div class="field"><label for="cQty">Vehicles going</label><input id="cQty" type="number" min="1" value="1" inputmode="numeric"></div>
           <div class="field"><label for="cRet">Return trip</label><input id="cRet" type="number" min="0" value="0" inputmode="numeric"></div>
         </div>
-        <span class="rhint">Cars coming back on the same trip? Return vehicles are 50% off.</span>
+        <span class="rhint">Cars coming back on the same trip? Return vehicles are up to 50% off ($65 minimum per vehicle).</span>
         <div class="calc-out" id="cOut"><span>Pick pickup and destination cities to see an estimate.</span></div>
         <p class="note" style="margin:8px 0 0">Estimate based on driving distance, for moves not covered by a signed service agreement. Contract clients are billed at their agreed rates. ZIPDRIVE Services may adjust the final price, which is confirmed before we dispatch.</p>
       </div>
@@ -593,7 +593,7 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
       <span class="eyebrow">Common questions</span>
       <details><summary>Is my vehicle insured while you drive it?</summary><p>Yes. ZIPDRIVE carries $1M primary commercial auto liability through Berkshire Hathaway. Our coverage responds first; your policy stays in excess. Pre-existing condition is photographed before every move.</p></details>
       <details><summary>Can I get a Certificate of Insurance?</summary><p>Yes. Business clients can also be named as Additional Insured. Ask at 855-ZIP-OHIO.</p></details>
-      <details><summary>How much does it cost?</summary><p>Flat rate per move, based on route and vehicle. Residential moves in the Columbus area start at $65. Business and fleet moves get an instant estimate on the Quote tab, and cars coming back on the same trip are 50% off. No meters and no surprise fees.</p></details>
+      <details><summary>How much does it cost?</summary><p>Flat rate per move, based on route and vehicle. Residential moves in the Columbus area start at $65. Business and fleet moves get an instant estimate on the Quote tab, and cars coming back on the same trip are up to 50% off ($65 minimum per vehicle). No meters and no surprise fees.</p></details>
       <details><summary>Do I need a contract?</summary><p>No. ZIPDRIVE works per move with no retainers or monthly minimums. Recurring clients can set up a standing service agreement.</p></details>
       <details><summary>Can you do same-day?</summary><p>In most cases, yes, subject to driver availability. Call or text early in the day. Airport returns and service appointments are best booked the day before.</p></details>
       <details><summary>What if there's an incident?</summary><p>Our commercial policy handles claims from our drivers' operation of the vehicle. We notify you in writing within 24 hours and work with our carrier to resolve it.</p></details>
@@ -724,6 +724,12 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
     const short=cost*RATE.markup-(per*d+ret*small); let bump=0;if(short>0){bump=Math.ceil(short/(d+small));per+=bump;ret+=bump}
     const outBig=n>=r;
     return {per,ret,total:per*d+ret*small,hrs,matched:true,bump,outPer:outBig?per:ret,backPer:outBig?ret:per}}
+  // Matched-move label states the real discount (the $65 minimum can shrink or erase the 50%)
+  function matchLabel(q,n,r){const full=n>=r?q.outPer:q.backPer, light=n>=r?q.backPer:q.outPer, leg=n>=r?'return':'outbound';
+    if(q.bump) return 'Matched-move discount applied';
+    if(light>=full) return 'Matched move · $65 minimum per vehicle applies';
+    const pct=Math.round((1-light/full)*100);
+    return 'Matched move: '+leg+' vehicles '+pct+'% off'+(light===RATE.minPerVehicle?' ($65 minimum)':'')}
   let lastEst=null; let qtyEdited=false;
   const fmt$=n=>'$'+n.toLocaleString('en-US');
   const fmtT=h=>{const m=Math.round(h*60);return m<60?m+' min':Math.floor(m/60)+' hr'+(m%60?' '+m%60+' min':'')};
@@ -738,7 +744,7 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
     if(q.matched){
       $('#cOut').innerHTML='<div class="big"><b>'+fmt$(q.total)+'</b><span>total · '+(n+r)+' vehicles</span></div>'
         +'<div class="sub2" style="color:var(--text)">'+n+' going × '+fmt$(q.outPer)+' &nbsp;+&nbsp; '+r+' coming back × '+fmt$(q.backPer)+'</div>'
-        +'<div class="sub2" style="color:var(--gold-hi)">'+(q.bump?'Matched-move discount applied':'Matched move: '+(n>=r?'return':'outbound')+' vehicles 50% off')+'</div>'+sub;
+        +'<div class="sub2" style="color:var(--gold-hi)">'+matchLabel(q,n,r)+'</div>'+sub;
     } else {
       $('#cOut').innerHTML='<div class="big"><b>'+fmt$(q.per)+'</b><span>per vehicle'+(n>1?' · '+fmt$(q.total)+' total for '+n:'')+'</span></div>'+sub;
     }
