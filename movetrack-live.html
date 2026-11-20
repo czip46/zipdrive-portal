@@ -504,13 +504,20 @@ function renderNewJobForm() {
       <label class="form-label">Drop-off Address</label>
       <input class="form-input" id="f-dest" placeholder="e.g. 150 E Dublin-Granville Rd">
     </div>
+    <div class="form-group">
+      <label class="form-label">Client Phone <span style="color:var(--fg-muted);font-weight:400">(optional — to text tracking link)</span></label>
+      <input class="form-input" id="f-client-phone" type="tel" placeholder="e.g. 614-555-1234">
+    </div>
     <button class="btn btn-gold" onclick="createJob()">Create Move</button>
     <div id="new-job-result" style="display:none">
       <div class="lbl" style="margin-top:4px">Share Links</div>
       <div class="share-box">
         <div style="font-size:11px;color:var(--gold);font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em">Client Tracking Link</div>
         <div class="share-url" id="client-link"></div>
-        <button class="copy-btn" onclick="copyText(document.getElementById('client-link').textContent)">Copy Link</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+          <button class="copy-btn" onclick="copyText(document.getElementById('client-link').textContent)">Copy Link</button>
+          <button class="copy-btn" id="text-client-btn" style="display:none;background:var(--green-dim);border-color:rgba(46,204,113,0.3);color:var(--green)" onclick="textClientLink()">📱 Text to Client</button>
+        </div>
       </div>
       <div class="share-box" style="margin-top:8px">
         <div style="font-size:11px;color:var(--gold);font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em">Driver Link (send to driver)</div>
@@ -520,11 +527,22 @@ function renderNewJobForm() {
     </div>`;
 }
 
+let _lastClientPhone = '';
+let _lastClientUrl = '';
+
+function textClientLink() {
+  if (!_lastClientUrl) return;
+  const phone = _lastClientPhone.replace(/\D/g,'');
+  const msg = encodeURIComponent(`Your ZIPDRIVE vehicle is on the way! Track it live here: ${_lastClientUrl}`);
+  window.location.href = `sms:${phone}&body=${msg}`;
+}
+
 async function createJob() {
   const jobId = document.getElementById('f-jobid').value.trim();
   const driver = document.getElementById('f-driver').value.trim();
   const origin = document.getElementById('f-origin').value.trim();
   const dest = document.getElementById('f-dest').value.trim();
+  const clientPhone = document.getElementById('f-client-phone').value.trim();
 
   if (!jobId || !origin) { showToast('Job ID and pick-up address required'); return; }
 
@@ -552,11 +570,22 @@ async function createJob() {
   const clientUrl = shareUrl(token);
   const driverUrl = `${location.origin}${location.pathname}?role=driver&job=${encodeURIComponent(jobId)}&token=${token}&driver=${encodeURIComponent(driver||'Driver')}`;
 
+  _lastClientUrl = clientUrl;
+  _lastClientPhone = clientPhone;
+
   document.getElementById('client-link').textContent = clientUrl;
   document.getElementById('driver-link').textContent = driverUrl;
   document.getElementById('new-job-result').style.display = 'flex';
   document.getElementById('new-job-result').style.flexDirection = 'column';
   document.getElementById('new-job-result').style.gap = '8px';
+
+  const textBtn = document.getElementById('text-client-btn');
+  if (clientPhone) {
+    textBtn.style.display = 'inline-flex';
+    textBtn.textContent = `📱 Text to ${clientPhone}`;
+  } else {
+    textBtn.style.display = 'none';
+  }
 
   showToast('Move created!');
   loadDashboard();
