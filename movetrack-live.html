@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0a0a0a">
+<title>MoveTrack Live</title>
+<link rel="icon" href="zipdrive-icon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<!-- Supabase JS -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.js"></script>
+<style>
+:root {
+  --bg: #0a0a0a;
+  --surface: #161616;
+  --surface2: #1e1e1e;
+  --border: rgba(255,255,255,0.08);
+  --fg: #ffffff;
+  --fg-muted: #888;
+  --gold: #c8973a;
+  --gold-dim: rgba(200,151,58,0.15);
+  --green: #2ecc71;
+  --green-dim: rgba(46,204,113,0.1);
+  --amber: #f0a030;
+  --amber-dim: rgba(240,160,48,0.1);
+  --red: #e05050;
+  --purple: #8b4fc8;
+  color-scheme: dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+body{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+
+/* Layout */
+.app{max-width:480px;margin:0 auto;min-height:100%;display:flex;flex-direction:column}
+
+/* Top bar */
+.topbar{
+  position:sticky;top:0;z-index:10;
+  display:flex;align-items:center;gap:10px;
+  padding:12px 16px;
+  background:rgba(10,10,10,0.95);
+  backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);
+}
+.topbar-logo{
+  width:32px;height:32px;border-radius:7px;
+  background:linear-gradient(145deg,#3a1d5c,#5b2d8e);
+  display:flex;align-items:center;justify-content:center;
+  font-weight:900;font-size:18px;color:#e8e8f0;
+  flex-shrink:0;font-family:'Inter',sans-serif;
+}
+.topbar-title{font-size:16px;font-weight:700;color:var(--fg)}
+.topbar-sub{font-size:11px;color:var(--fg-muted)}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.live-badge{
+  display:flex;align-items:center;gap:5px;
+  background:var(--green-dim);border:1px solid rgba(46,204,113,0.2);
+  border-radius:20px;padding:4px 10px;
+  font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--green);
+}
+.live-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+/* Screens */
+.screen{display:none;flex:1;flex-direction:column;padding:16px;gap:12px;overflow-y:auto}
+.screen.active{display:flex}
+
+/* Section label */
+.lbl{font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);margin-bottom:4px}
+
+/* Tiles */
+.tile{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;
+}
+.tile-left{min-width:0}
+.tile-title{font-size:15px;font-weight:600;color:var(--fg);margin-bottom:2px}
+.tile-sub{font-size:12px;color:var(--fg-muted)}
+.tile-arrow{color:var(--gold);font-size:17px;flex-shrink:0}
+
+/* Badge */
+.badge{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 9px;border-radius:20px;flex-shrink:0;white-space:nowrap}
+.badge-green{background:var(--green-dim);color:var(--green);border:1px solid rgba(46,204,113,0.2)}
+.badge-amber{background:var(--amber-dim);color:var(--amber);border:1px solid rgba(240,160,48,0.2)}
+.badge-muted{background:rgba(255,255,255,0.05);color:var(--fg-muted);border:1px solid var(--border)}
+.badge-red{background:rgba(224,80,80,0.1);color:var(--red);border:1px solid rgba(224,80,80,0.2)}
+
+/* Stat row */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px}
+.stat-num{font-size:28px;font-weight:800;line-height:1;margin-bottom:3px}
+.stat-lbl{font-size:10px;color:var(--fg-muted);font-weight:500}
+
+/* Map container */
+.map-wrap{
+  background:#0d1e30;border:1px solid var(--border);border-radius:12px;
+  overflow:hidden;position:relative;height:220px;
+}
+.map-wrap iframe{width:100%;height:100%;border:none;display:block}
+.map-placeholder{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:8px;color:var(--fg-muted);font-size:13px;
+}
+.map-placeholder .map-icon{font-size:32px}
+
+/* Driver info strip */
+.driver-strip{
+  display:flex;align-items:center;gap:10px;
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;
+}
+.driver-avatar{
+  width:38px;height:38px;border-radius:50%;background:var(--purple);
+  display:flex;align-items:center;justify-content:center;
+  font-size:14px;font-weight:700;color:#fff;flex-shrink:0;
+}
+.driver-name{font-size:14px;font-weight:600;color:var(--fg)}
+.driver-role{font-size:11px;color:var(--fg-muted)}
+.eta-block{margin-left:auto;text-align:right}
+.eta-num{font-size:20px;font-weight:800;color:var(--fg)}
+.eta-lbl{font-size:10px;color:var(--fg-muted);text-transform:uppercase;letter-spacing:.08em}
+
+/* Route display */
+.route-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px}
+.route-row{display:flex;align-items:center;gap:10px;font-size:13px}
+.route-icon{font-size:12px;width:14px;text-align:center;flex-shrink:0}
+.route-addr{color:var(--fg);font-weight:500}
+.route-line{width:1px;height:10px;background:var(--border);margin-left:7px}
+
+/* Buttons */
+.btn{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  border-radius:12px;padding:14px 18px;font-size:15px;font-weight:700;
+  border:none;cursor:pointer;width:100%;
+  font-family:'Inter',sans-serif;
+}
+.btn-gold{background:var(--gold);color:#1a1206}
+.btn-gold:active{opacity:.85}
+.btn-green{background:var(--green);color:#0a2010}
+.btn-green:active{opacity:.85}
+.btn-red{background:var(--red);color:#fff}
+.btn-red:active{opacity:.85}
+.btn-ghost{background:var(--surface2);color:var(--fg);border:1px solid var(--border)}
+.btn-ghost:active{opacity:.85}
+.btn-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+/* Forms */
+.form-group{display:flex;flex-direction:column;gap:6px}
+.form-label{font-size:12px;font-weight:600;color:var(--fg-muted);text-transform:uppercase;letter-spacing:.08em}
+.form-input{
+  background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  padding:12px 14px;font-size:14px;color:var(--fg);font-family:'Inter',sans-serif;
+  outline:none;
+}
+.form-input:focus{border-color:var(--gold)}
+
+/* Share link box */
+.share-box{
+  background:var(--gold-dim);border:1px solid rgba(200,151,58,0.25);border-radius:12px;padding:14px;
+}
+.share-url{
+  font-size:12px;color:var(--gold);word-break:break-all;margin-bottom:10px;font-family:monospace;
+}
+.copy-btn{
+  background:var(--gold);color:#1a1206;border:none;border-radius:8px;
+  padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;
+}
+
+/* Toast */
+.toast{
+  position:fixed;bottom:calc(20px + env(safe-area-inset-bottom,0px));left:50%;
+  transform:translateX(-50%);
+  background:#222;color:var(--fg);border:1px solid var(--border);
+  border-radius:10px;padding:10px 20px;font-size:13px;font-weight:600;
+  z-index:100;white-space:nowrap;opacity:0;transition:opacity .2s;pointer-events:none;
+}
+.toast.show{opacity:1}
+
+/* Error / empty state */
+.empty{text-align:center;padding:40px 20px;color:var(--fg-muted);font-size:14px}
+.empty-icon{font-size:36px;margin-bottom:10px}
+
+/* Nav tabs (dispatcher only) */
+.nav-tabs{
+  display:flex;border-bottom:1px solid var(--border);
+  padding:0 16px;background:var(--bg);
+  position:sticky;top:57px;z-index:9;
+}
+.nav-tab{
+  flex:1;padding:10px 4px;font-size:13px;font-weight:600;color:var(--fg-muted);
+  border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;
+  font-family:'Inter',sans-serif;
+}
+.nav-tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+
+/* Loading spinner */
+.spinner{
+  width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--gold);
+  border-radius:50%;animation:spin .7s linear infinite;margin:40px auto;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Job list item */
+.job-item{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:14px;display:flex;flex-direction:column;gap:6px;
+}
+.job-header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.job-id{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-muted)}
+.job-route{font-size:13px;color:var(--fg);font-weight:500}
+.job-meta{font-size:12px;color:var(--fg-muted)}
+.job-actions{display:flex;gap:8px;margin-top:4px}
+.job-btn{
+  flex:1;padding:8px;border-radius:8px;font-size:12px;font-weight:700;border:none;cursor:pointer;
+  font-family:'Inter',sans-serif;
+}
+.job-btn-gold{background:var(--gold);color:#1a1206}
+.job-btn-ghost{background:var(--surface2);color:var(--fg);border:1px solid var(--border)}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div style="display:flex;align-items:center;justify-content:center;height:100vh">
+    <div class="spinner"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── CONFIG ───────────────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://gmpzlpgxjwboezvubaka.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdtcHpscGd4andib2V6dnViYWthIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUxNzIzMjAsImV4cCI6MjExMDc0ODMyMH0.bkOMf1sRy6LUZ628vUrJgEOTGHB-CKBKUJ8G5SburgM';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ─── ROLE DETECTION ───────────────────────────────────────────────────────────
+// ?role=dispatcher  → dispatcher view (default, no param)
+// ?role=driver&job=ZD-001&token=xxx  → driver view
+// ?track=TOKEN  → client tracking view
+const params = new URLSearchParams(location.search);
+const role = params.get('role') || (params.get('track') ? 'client' : 'dispatcher');
+const trackToken = params.get('track');
+const driverJobId = params.get('job');
+const driverToken = params.get('token');
+const driverName = params.get('driver') || 'Driver';
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let watchId = null;
+let activeJobs = [];
+let currentJob = null;
+let realtimeSub = null;
+
+// ─── UTILS ────────────────────────────────────────────────────────────────────
+function showToast(msg, duration = 2500) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
+}
+
+function genToken() {
+  return Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
+}
+
+function shareUrl(token) {
+  return `${location.origin}${location.pathname}?track=${token}`;
+}
+
+function mapsUrl(lat, lng, destLat, destLng) {
+  if (destLat && destLng) {
+    return `https://www.google.com/maps/dir/${lat},${lng}/${destLat},${destLng}`;
+  }
+  return `https://www.google.com/maps?q=${lat},${lng}`;
+}
+
+function staticMapUrl(lat, lng) {
+  // OpenStreetMap tile-based static map approximation via iframe
+  return `https://www.openstreetmap.org/export/embed.html?bbox=${lng-0.02},${lat-0.015},${lng+0.02},${lat+0.015}&layer=mapnik&marker=${lat},${lng}`;
+}
+
+function copyText(text) {
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => showToast('Copied!')).catch(() => {
+      fallbackCopy(text);
+    });
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text) {
+  const el = document.createElement('textarea');
+  el.value = text;
+  el.style.position = 'fixed';
+  el.style.opacity = '0';
+  document.body.appendChild(el);
+  el.select();
+  document.execCommand('copy');
+  document.body.removeChild(el);
+  showToast('Copied!');
+}
+
+function initials(name) {
+  return (name || '?').split(' ').map(w => w[0]).join('').toUpperCase().slice(0,2);
+}
+
+// ─── RENDER HELPERS ───────────────────────────────────────────────────────────
+function renderTopbar(title, sub, showLive = false) {
+  return `
+    <div class="topbar">
+      <div class="topbar-logo">Z</div>
+      <div>
+        <div class="topbar-title">${title}</div>
+        <div class="topbar-sub">${sub}</div>
+      </div>
+      <div class="topbar-right">
+        ${showLive ? `<div class="live-badge"><span class="live-dot"></span>Live</div>` : ''}
+        ${role === 'dispatcher' ? `<a href="index.html" style="font-size:12px;color:var(--fg-muted);text-decoration:none">← Portal</a>` : ''}
+      </div>
+    </div>`;
+}
+
+// ─── DISPATCHER VIEW ──────────────────────────────────────────────────────────
+async function initDispatcher() {
+  const app = document.getElementById('app');
+  app.innerHTML = renderTopbar('MoveTrack', 'Dispatcher view') + `
+    <div class="nav-tabs">
+      <button class="nav-tab active" onclick="showTab('dashboard')">Dashboard</button>
+      <button class="nav-tab" onclick="showTab('new-job')">New Move</button>
+      <button class="nav-tab" onclick="showTab('all-jobs')">All Jobs</button>
+    </div>
+    <div id="tab-dashboard" class="screen active"></div>
+    <div id="tab-new-job" class="screen"></div>
+    <div id="tab-all-jobs" class="screen"></div>`;
+
+  await loadDashboard();
+  renderNewJobForm();
+  await loadAllJobs();
+
+  // Real-time updates
+  realtimeSub = sb.channel('move_locations')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'move_locations' }, () => {
+      loadDashboard();
+      loadAllJobs();
+    })
+    .subscribe();
+}
+
+function showTab(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(`tab-${name}`).classList.add('active');
+  event.target.classList.add('active');
+}
+
+async function loadDashboard() {
+  const el = document.getElementById('tab-dashboard');
+  if (!el) return;
+
+  const { data: jobs } = await sb.from('move_locations').select('*').order('updated_at', { ascending: false });
+  const all = jobs || [];
+  const active = all.filter(j => j.status === 'active');
+  const pending = all.filter(j => j.status === 'pending');
+
+  let html = `
+    <div class="stats">
+      <div class="stat"><div class="stat-num" style="color:var(--fg)">${all.length}</div><div class="stat-lbl">Total</div></div>
+      <div class="stat"><div class="stat-num" style="color:var(--green)">${active.length}</div><div class="stat-lbl">Active</div></div>
+      <div class="stat"><div class="stat-num" style="color:var(--amber)">${pending.length}</div><div class="stat-lbl">Pending</div></div>
+    </div>`;
+
+  if (active.length === 0 && pending.length === 0) {
+    html += `<div class="empty"><div class="empty-icon">🚗</div>No active moves right now.<br>Create a new move to get started.</div>`;
+  }
+
+  active.forEach(job => { html += renderJobCard(job, true); });
+  pending.forEach(job => { html += renderJobCard(job, false); });
+
+  el.innerHTML = html;
+}
+
+function renderJobCard(job, isActive) {
+  const url = shareUrl(job.share_token);
+  const driverUrl = `${location.origin}${location.pathname}?role=driver&job=${encodeURIComponent(job.job_id)}&token=${job.share_token}&driver=${encodeURIComponent(job.driver_name||'Driver')}`;
+  const mapSrc = (job.lat && job.lng) ? staticMapUrl(job.lat, job.lng) : null;
+
+  return `
+    <div class="job-item">
+      <div class="job-header">
+        <span class="job-id">${job.job_id}</span>
+        <span class="badge ${isActive ? 'badge-green' : 'badge-amber'}">${isActive ? 'Active' : 'Pending'}</span>
+      </div>
+      <div class="job-route">📍 ${job.origin || '—'} → ${job.destination || '—'}</div>
+      <div class="job-meta">Driver: ${job.driver_name || 'Unassigned'} ${job.lat ? `· ${job.lat.toFixed(4)}, ${job.lng.toFixed(4)}` : ''} ${job.updated_at ? `· ${timeAgo(job.updated_at)}` : ''}</div>
+      ${mapSrc && isActive ? `<div class="map-wrap"><iframe src="${mapSrc}" title="Map"></iframe></div>` : ''}
+      <div class="job-actions">
+        <button class="job-btn job-btn-gold" onclick="copyText('${url}')">📋 Client Link</button>
+        <button class="job-btn job-btn-ghost" onclick="copyText('${driverUrl}')">🚗 Driver Link</button>
+        ${isActive ? `<button class="job-btn job-btn-ghost" onclick="endJob('${job.job_id}')">✓ End</button>` : ''}
+      </div>
+    </div>`;
+}
+
+async function endJob(jobId) {
+  await sb.from('move_locations').update({ status: 'completed' }).eq('job_id', jobId);
+  showToast('Move completed');
+  loadDashboard();
+  loadAllJobs();
+}
+
+async function loadAllJobs() {
+  const el = document.getElementById('tab-all-jobs');
+  if (!el) return;
+  const { data: jobs } = await sb.from('move_locations').select('*').order('updated_at', { ascending: false });
+  const all = jobs || [];
+  if (all.length === 0) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">📋</div>No jobs yet.</div>`;
+    return;
+  }
+  el.innerHTML = all.map(job => {
+    const statusMap = { active: 'badge-green', pending: 'badge-amber', completed: 'badge-muted' };
+    return `
+      <div class="job-item">
+        <div class="job-header">
+          <span class="job-id">${job.job_id}</span>
+          <span class="badge ${statusMap[job.status] || 'badge-muted'}">${job.status}</span>
+        </div>
+        <div class="job-route">📍 ${job.origin || '—'} → ${job.destination || '—'}</div>
+        <div class="job-meta">Driver: ${job.driver_name || 'Unassigned'} · ${timeAgo(job.updated_at)}</div>
+      </div>`;
+  }).join('');
+}
+
+function renderNewJobForm() {
+  const el = document.getElementById('tab-new-job');
+  if (!el) return;
+  el.innerHTML = `
+    <div class="lbl">Job Details</div>
+    <div class="form-group">
+      <label class="form-label">Job ID</label>
+      <input class="form-input" id="f-jobid" placeholder="e.g. ZD-0003" value="ZD-00${String(Math.floor(Math.random()*900)+100)}">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Driver Name</label>
+      <input class="form-input" id="f-driver" placeholder="e.g. Brien Naylon">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Pick-up Address</label>
+      <input class="form-input" id="f-origin" placeholder="e.g. 4200 Lyman Dr, Hilliard">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Drop-off Address</label>
+      <input class="form-input" id="f-dest" placeholder="e.g. 150 E Dublin-Granville Rd">
+    </div>
+    <button class="btn btn-gold" onclick="createJob()">Create Move</button>
+    <div id="new-job-result" style="display:none">
+      <div class="lbl" style="margin-top:4px">Share Links</div>
+      <div class="share-box">
+        <div style="font-size:11px;color:var(--gold);font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em">Client Tracking Link</div>
+        <div class="share-url" id="client-link"></div>
+        <button class="copy-btn" onclick="copyText(document.getElementById('client-link').textContent)">Copy Link</button>
+      </div>
+      <div class="share-box" style="margin-top:8px">
+        <div style="font-size:11px;color:var(--gold);font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em">Driver Link (send to driver)</div>
+        <div class="share-url" id="driver-link"></div>
+        <button class="copy-btn" onclick="copyText(document.getElementById('driver-link').textContent)">Copy Link</button>
+      </div>
+    </div>`;
+}
+
+async function createJob() {
+  const jobId = document.getElementById('f-jobid').value.trim();
+  const driver = document.getElementById('f-driver').value.trim();
+  const origin = document.getElementById('f-origin').value.trim();
+  const dest = document.getElementById('f-dest').value.trim();
+
+  if (!jobId || !origin) { showToast('Job ID and pick-up address required'); return; }
+
+  const token = genToken();
+  const { error } = await sb.from('move_locations').insert({
+    job_id: jobId,
+    share_token: token,
+    driver_name: driver || 'Unassigned',
+    lat: 40.0853, lng: -83.1162, // Powell, OH default
+    origin: origin,
+    destination: dest,
+    status: 'pending'
+  });
+
+  if (error) { showToast('Error creating job: ' + error.message); return; }
+
+  const clientUrl = shareUrl(token);
+  const driverUrl = `${location.origin}${location.pathname}?role=driver&job=${encodeURIComponent(jobId)}&token=${token}&driver=${encodeURIComponent(driver||'Driver')}`;
+
+  document.getElementById('client-link').textContent = clientUrl;
+  document.getElementById('driver-link').textContent = driverUrl;
+  document.getElementById('new-job-result').style.display = 'flex';
+  document.getElementById('new-job-result').style.flexDirection = 'column';
+  document.getElementById('new-job-result').style.gap = '8px';
+
+  showToast('Move created!');
+  loadDashboard();
+  loadAllJobs();
+}
+
+// ─── DRIVER VIEW ──────────────────────────────────────────────────────────────
+async function initDriver() {
+  const app = document.getElementById('app');
+
+  if (!driverJobId || !driverToken) {
+    app.innerHTML = renderTopbar('MoveTrack', 'Driver') + `
+      <div class="screen active">
+        <div class="empty"><div class="empty-icon">❌</div>Invalid driver link.<br>Ask dispatcher for a new link.</div>
+      </div>`;
+    return;
+  }
+
+  // Load job info
+  const { data: jobs } = await sb.from('move_locations').select('*').eq('job_id', driverJobId).eq('share_token', driverToken);
+  currentJob = jobs && jobs[0];
+
+  if (!currentJob) {
+    app.innerHTML = renderTopbar('MoveTrack', 'Driver') + `
+      <div class="screen active">
+        <div class="empty"><div class="empty-icon">❌</div>Job not found.<br>Check your link with dispatch.</div>
+      </div>`;
+    return;
+  }
+
+  renderDriverView();
+}
+
+function renderDriverView() {
+  const app = document.getElementById('app');
+  const isActive = currentJob.status === 'active';
+
+  app.innerHTML = renderTopbar('MoveTrack', `Job ${currentJob.job_id}`, isActive) + `
+    <div class="screen active" id="driver-screen">
+      <div class="route-card">
+        <div class="route-row"><span class="route-icon">🟢</span><span class="route-addr"><strong>From:</strong> ${currentJob.origin || '—'}</span></div>
+        <div class="route-line"></div>
+        <div class="route-row"><span class="route-icon">📍</span><span class="route-addr"><strong>To:</strong> ${currentJob.destination || '—'}</span></div>
+      </div>
+      ${isActive ? `
+        <div class="driver-strip">
+          <div class="driver-avatar">${initials(driverName)}</div>
+          <div><div class="driver-name">${driverName}</div><div class="driver-role">Sharing location</div></div>
+          <div class="eta-block"><div class="eta-num" id="gps-status">📡</div><div class="eta-lbl">GPS</div></div>
+        </div>
+        <div class="map-wrap" id="driver-map">
+          <div class="map-placeholder"><div class="map-icon">📡</div>Waiting for GPS...</div>
+        </div>
+        <button class="btn btn-red" onclick="stopMove()">🏁 End Move</button>
+      ` : `
+        <button class="btn btn-green" onclick="startMove()" id="start-btn">🚗 Start Move</button>
+        <p style="text-align:center;font-size:12px;color:var(--fg-muted)">Tap to begin sharing your location</p>
+      `}
+    </div>`;
+}
+
+async function startMove() {
+  const btn = document.getElementById('start-btn');
+  if (btn) { btn.textContent = 'Starting...'; btn.disabled = true; }
+
+  if (!navigator.geolocation) {
+    showToast('GPS not available on this device');
+    return;
+  }
+
+  // Update status to active
+  await sb.from('move_locations').update({ status: 'active', driver_name: driverName }).eq('job_id', driverJobId).eq('share_token', driverToken);
+  currentJob.status = 'active';
+  renderDriverView();
+  beginTracking();
+}
+
+function beginTracking() {
+  if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+
+  watchId = navigator.geolocation.watchPosition(
+    async (pos) => {
+      const { latitude: lat, longitude: lng, heading, speed } = pos.coords;
+
+      // Update status indicator
+      const gpsEl = document.getElementById('gps-status');
+      if (gpsEl) gpsEl.textContent = '🟢';
+
+      // Update map
+      const mapEl = document.getElementById('driver-map');
+      if (mapEl) {
+        mapEl.innerHTML = `<iframe src="${staticMapUrl(lat, lng)}" title="Your location"></iframe>`;
+      }
+
+      // Push to Supabase
+      await sb.from('move_locations').update({
+        lat, lng,
+        heading: heading || null,
+        speed: speed ? Math.round(speed * 2.237) : null, // m/s → mph
+        updated_at: new Date().toISOString()
+      }).eq('job_id', driverJobId).eq('share_token', driverToken);
+    },
+    (err) => {
+      const gpsEl = document.getElementById('gps-status');
+      if (gpsEl) gpsEl.textContent = '❌';
+      showToast('GPS error: ' + err.message);
+    },
+    { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
+  );
+}
+
+async function stopMove() {
+  if (watchId !== null) {
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+  }
+  await sb.from('move_locations').update({ status: 'completed' }).eq('job_id', driverJobId).eq('share_token', driverToken);
+  currentJob.status = 'completed';
+
+  const app = document.getElementById('app');
+  app.innerHTML = renderTopbar('MoveTrack', `Job ${driverJobId}`) + `
+    <div class="screen active">
+      <div class="empty" style="padding-top:80px">
+        <div class="empty-icon">✅</div>
+        <div style="font-size:18px;font-weight:700;color:var(--fg);margin-bottom:8px">Move Complete</div>
+        <div>Job ${driverJobId} has been marked as delivered.</div>
+      </div>
+    </div>`;
+}
+
+// ─── CLIENT TRACKING VIEW ─────────────────────────────────────────────────────
+async function initClient() {
+  const app = document.getElementById('app');
+
+  if (!trackToken) {
+    app.innerHTML = `<div class="screen active"><div class="empty"><div class="empty-icon">❌</div>Invalid tracking link.</div></div>`;
+    return;
+  }
+
+  // Initial load
+  await renderClientView();
+
+  // Real-time updates
+  realtimeSub = sb.channel('client-track')
+    .on('postgres_changes', {
+      event: 'UPDATE', schema: 'public', table: 'move_locations',
+      filter: `share_token=eq.${trackToken}`
+    }, (payload) => {
+      updateClientMap(payload.new);
+    })
+    .subscribe();
+}
+
+async function renderClientView() {
+  const app = document.getElementById('app');
+  const { data: jobs } = await sb.from('move_locations').select('*').eq('share_token', trackToken);
+  const job = jobs && jobs[0];
+
+  if (!job) {
+    app.innerHTML = renderTopbar('ZIPDRIVE', 'Live Tracking') + `
+      <div class="screen active">
+        <div class="empty"><div class="empty-icon">🔍</div>Tracking link not found or expired.</div>
+      </div>`;
+    return;
+  }
+
+  const isActive = job.status === 'active';
+  const isCompleted = job.status === 'completed';
+
+  app.innerHTML = renderTopbar('ZIPDRIVE', 'Live Tracking', isActive) + `
+    <div class="screen active" id="client-screen">
+      ${isCompleted ? `
+        <div class="tile" style="background:var(--green-dim);border-color:rgba(46,204,113,0.2)">
+          <div class="tile-left">
+            <div class="tile-title" style="color:var(--green)">✅ Delivered</div>
+            <div class="tile-sub">Your vehicle has been delivered</div>
+          </div>
+        </div>` : ''}
+      <div class="route-card">
+        <div class="route-row"><span class="route-icon">🟢</span><span class="route-addr"><strong>From:</strong> ${job.origin || '—'}</span></div>
+        <div class="route-line"></div>
+        <div class="route-row"><span class="route-icon">📍</span><span class="route-addr"><strong>To:</strong> ${job.destination || '—'}</span></div>
+      </div>
+      <div class="driver-strip">
+        <div class="driver-avatar">${initials(job.driver_name)}</div>
+        <div>
+          <div class="driver-name">${job.driver_name || 'Your Driver'}</div>
+          <div class="driver-role">ZIPDRIVE · Insured Driver</div>
+        </div>
+        <div class="eta-block">
+          <div class="eta-num">${isActive ? '🟢' : (isCompleted ? '✅' : '⏳')}</div>
+          <div class="eta-lbl">${isActive ? 'En Route' : (isCompleted ? 'Done' : 'Pending')}</div>
+        </div>
+      </div>
+      <div class="map-wrap" id="client-map">
+        ${job.lat && isActive
+          ? `<iframe src="${staticMapUrl(job.lat, job.lng)}" title="Vehicle location"></iframe>`
+          : `<div class="map-placeholder"><div class="map-icon">${isCompleted ? '✅' : '⏳'}</div>${isCompleted ? 'Vehicle delivered' : 'Move not yet started'}</div>`
+        }
+      </div>
+      ${job.lat && isActive ? `
+        <div class="tile">
+          <div class="tile-left">
+            <div class="tile-title">Last Update</div>
+            <div class="tile-sub">${timeAgo(job.updated_at)}</div>
+          </div>
+          <a href="${mapsUrl(job.lat, job.lng)}" target="_blank" style="text-decoration:none">
+            <span class="badge badge-green">Open Maps ↗</span>
+          </a>
+        </div>` : ''}
+      <div style="text-align:center;font-size:11px;color:var(--fg-muted);padding:8px 0">
+        ZIPDRIVE Services · 855-ZIP-OHIO · <a href="https://zipdriveservices.com" style="color:var(--gold)">zipdriveservices.com</a>
+      </div>
+    </div>`;
+}
+
+function updateClientMap(job) {
+  const mapEl = document.getElementById('client-map');
+  if (mapEl && job.lat && job.lng) {
+    mapEl.innerHTML = `<iframe src="${staticMapUrl(job.lat, job.lng)}" title="Vehicle location"></iframe>`;
+  }
+  // Refresh full view to update status/timestamp
+  renderClientView();
+}
+
+// ─── TIME AGO ─────────────────────────────────────────────────────────────────
+function timeAgo(ts) {
+  if (!ts) return '';
+  const diff = (Date.now() - new Date(ts)) / 1000;
+  if (diff < 60) return 'Just now';
+  if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+  return new Date(ts).toLocaleDateString();
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+if (role === 'driver') {
+  initDriver();
+} else if (role === 'client') {
+  initClient();
+} else {
+  initDispatcher();
+}
+</script>
+</body>
+</html>
