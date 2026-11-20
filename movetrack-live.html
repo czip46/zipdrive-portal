@@ -232,12 +232,11 @@ body{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
 <script>
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const SUPABASE_URL = 'https://gmpzlpgxjwboezvubaka.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdtcHpscGd4andib2V6dnViYWthIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUxNzIzMjAsImV4cCI6MjExMDc0ODMyMH0.bkOMf1sRy6LUZ628vUrJgEOTGHB-CKBKUJ8G5SburgM';
+const SUPABASE_KEY = 'sb_publishable_AouNjb7B75WhEQD21HwQig_CfwTWJoQ'; // publishable key: safe in a browser
 const API = `${SUPABASE_URL}/rest/v1/move_locations`;
 const HEADERS = {
   'Content-Type': 'application/json',
-  'apikey': SUPABASE_KEY,
-  'Authorization': `Bearer ${SUPABASE_KEY}`,
+  'apikey': SUPABASE_KEY, // new-style keys go in apikey only (no Bearer)
   'Prefer': 'return=representation'
 };
 
