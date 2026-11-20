@@ -376,6 +376,14 @@
   }
 
   .copy-btn:active { transform: scale(0.98); background: var(--purple-dark); }
+  .share-btn { background: #C9A84C; color: #1a1206; margin-top: 10px; }
+  .share-btn:active { background: #b8973f; }
+  .quote-for { margin-top: 18px; padding: 14px; border-radius: 10px; background: #161616; border: 1px solid #2a2a2a; }
+  .quote-for .qf-h { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: #C9A84C; font-weight: 700; margin-bottom: 10px; }
+  .quote-for input[type="text"] { width: 100%; background: #1e1e1e; border: 1px solid #2e2e2e; border-radius: 8px; color: #fff; font: inherit; font-size: 15px; padding: 11px 12px; margin-bottom: 8px; outline: none; }
+  .quote-for input[type="text"]:focus { border-color: var(--purple); }
+  .quote-for .qf-two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .quote-for .qf-two input { margin-bottom: 0; min-width: 0; }
   .copy-btn.copied { background: #1a6e3a; }
 
   .copy-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
@@ -542,9 +550,19 @@
     <span class="rate-info-value" id="res-bill-rate">$40.00 / hr</span>
   </div>
 
+  <div class="quote-for">
+    <div class="qf-h">Quote details (optional, shown on the quote)</div>
+    <input type="text" id="q-client" placeholder="Client / dealership" autocomplete="off">
+    <div class="qf-two"><input type="text" id="q-from" placeholder="From (city)" autocomplete="off"><input type="text" id="q-to" placeholder="To (city)" autocomplete="off"></div>
+  </div>
+
   <button class="copy-btn" id="copy-btn">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
     <span id="copy-btn-text">Copy Quote</span>
+  </button>
+  <button class="copy-btn share-btn" id="share-btn" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 002 2h10a2 2 0 002-2v-6"/></svg>
+    <span id="share-btn-text">Share Quote Image</span>
   </button>
 
 </div>
@@ -728,6 +746,9 @@
 
     let text = `ZIPDRIVE SERVICES — RATE QUOTE\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+    const qc = $('q-client').value.trim(), qf = $('q-from').value.trim(), qt = $('q-to').value.trim();
+    if (qc) text += `Prepared for:   ${qc}\n`;
+    if (qf || qt) text += `Route:          ${qf || '—'} → ${qt || '—'}\n`;
     if (lastMatch) {
       text += `Matched move:   ${lastMatch.vehicles} out / ${lastMatch.returns} back\n`;
     } else {
@@ -774,6 +795,74 @@
       setTimeout(() => { $('copy-btn-text').textContent = 'Copy Quote'; }, 2500);
     });
   });
+
+  // ── Share Quote Image: branded PNG for texts/emails ──
+  const LOGO = new Image(); LOGO.src = 'zipdrive-logo.png';
+  function wrap(ctx, text, maxW){ const words=text.split(' '); const lines=[]; let line='';
+    for(const w of words){ const t=line?line+' '+w:w; if(ctx.measureText(t).width>maxW&&line){lines.push(line);line=w}else line=t } if(line)lines.push(line); return lines; }
+  async function buildQuoteImage(){
+    calc();
+    const W=1080,H=1350, c=document.createElement('canvas'); c.width=W; c.height=H; const x=c.getContext('2d');
+    const F='"Inter","Helvetica Neue",Arial,sans-serif', GOLD='#D6B65C', GOLDHI='#E3C778', MUTED='#B9B1C7', TXT='#F4F2F7';
+    // background
+    x.fillStyle='#0B0A0E'; x.fillRect(0,0,W,H);
+    let g=x.createRadialGradient(W,0,0,W,0,900); g.addColorStop(0,'rgba(91,45,142,.55)'); g.addColorStop(1,'rgba(91,45,142,0)'); x.fillStyle=g; x.fillRect(0,0,W,H);
+    g=x.createRadialGradient(0,H,0,0,H,700); g.addColorStop(0,'rgba(91,45,142,.25)'); g.addColorStop(1,'rgba(91,45,142,0)'); x.fillStyle=g; x.fillRect(0,0,W,H);
+    // logo + header
+    try{ if(!LOGO.complete) await new Promise(r=>{LOGO.onload=r;LOGO.onerror=r}); x.save(); x.beginPath(); x.roundRect(72,64,190,190,22); x.clip(); x.drawImage(LOGO,72,64,190,190); x.restore(); }catch(e){}
+    x.textBaseline='alphabetic'; x.fillStyle=GOLD; x.font=`700 24px ${F}`; x.letterSpacing='4px'; x.fillText('FLAT-RATE QUOTE',300,128); x.letterSpacing='0px';
+    x.fillStyle=TXT; x.font=`900 46px ${F}`; x.fillText('ZIPDRIVE Services',300,184);
+    x.fillStyle=MUTED; x.font=`500 26px ${F}`; x.fillText(new Date().toLocaleDateString('en-US',{weekday:'short',month:'long',day:'numeric',year:'numeric'}),300,226);
+    let y=330;
+    const qc=$('q-client').value.trim(), qf=$('q-from').value.trim(), qt=$('q-to').value.trim();
+    if(qc){ x.fillStyle=MUTED; x.font=`600 24px ${F}`; x.fillText('PREPARED FOR',72,y); y+=46; x.fillStyle=TXT; x.font=`800 40px ${F}`; for(const l of wrap(x,qc,936)){x.fillText(l,72,y);y+=48} y+=18; }
+    // route card
+    const miles=Math.max(0,parseFloat($('miles').value)||0), hrs=Math.max(0,parseFloat($('hours').value)||0), mins=Math.max(0,parseFloat($('minutes').value)||0);
+    const vehicles=Math.max(1,parseInt($('vehicles').value)||1);
+    x.fillStyle='rgba(255,255,255,.05)'; x.strokeStyle='#3a3046'; x.lineWidth=2; x.beginPath(); x.roundRect(72,y,936,qf||qt?160:110,24); x.fill(); x.stroke();
+    let ry=y+60;
+    if(qf||qt){ x.fillStyle=TXT; x.font=`800 40px ${F}`; const rt=`${qf||'—'}  →  ${qt||'—'}`; x.fillText(wrap(x,rt,880)[0],104,ry); ry+=58; }
+    x.fillStyle=MUTED; x.font=`500 28px ${F}`; x.fillText(`About ${Math.round(miles)} miles one way · ${fmtTime((hrs+mins/60)*60)} drive`,104,ry);
+    y += (qf||qt?160:110) + 56;
+    // line items
+    const line=(l,r,col)=>{ x.fillStyle=col||TXT; x.font=`600 34px ${F}`; x.fillText(l,72,y); x.textAlign='right'; x.font=`800 34px ${F}`; x.fillText(r,1008,y); x.textAlign='left'; y+=58; };
+    if(lastMatch){ const m=lastMatch; const big=Math.max(m.vehicles,m.returns), sm=Math.min(m.vehicles,m.returns);
+      const [bl,sl]=m.outIsBig?['going','coming back']:['coming back','going'];
+      line(`${big} ${bl} × ${fmt(m.quotePer)}`, fmt(m.quotePer*big));
+      line(`${sm} ${sl} × ${fmt(m.retPer)}`, fmt(m.retPer*sm));
+      const pct=Math.round((1-m.retPer/m.quotePer)*100);
+      x.fillStyle=GOLDHI; x.font=`600 28px ${F}`; x.fillText(pct>0?`Matched move: return vehicles ${pct}% off`:'Matched move · $65 minimum per vehicle',72,y); y+=50;
+    } else { line(`${vehicles} vehicle${vehicles>1?'s':''} × ${$('res-quote-per').textContent}`, $('res-quote-total').textContent); }
+    if (deadHeadOn) line('Dead head fee','$125.00');
+    // total
+    y+=10; x.strokeStyle='#3a3046'; x.beginPath(); x.moveTo(72,y); x.lineTo(1008,y); x.stroke(); y+=84;
+    x.fillStyle=MUTED; x.font=`700 26px ${F}`; x.letterSpacing='4px'; x.fillText('TOTAL',72,y-8); x.letterSpacing='0px';
+    x.textAlign='right'; x.fillStyle=GOLDHI; x.font=`900 92px ${F}`; x.fillText($('res-quote-total').textContent.replace(/\.00$/,''),1008,y+14); x.textAlign='left'; y+=70;
+    x.fillStyle=MUTED; x.font=`500 24px ${F}`; x.fillText('Flat rate · driver return trip and chase vehicle included',72,y); y+=40;
+    // footer panel
+    const fy=H-300; x.fillStyle='#16121C'; x.strokeStyle='#3a3046'; x.beginPath(); x.roundRect(48,fy,984,252,30); x.fill(); x.stroke();
+    x.fillStyle=GOLDHI; x.font=`900 50px ${F}`; x.fillText('855-ZIP-OHIO',90,fy+74);
+    x.fillStyle=TXT; x.font=`800 32px ${F}`; x.fillText('zipdriveservices.com/app',90,fy+122);
+    x.fillStyle=MUTED; x.font=`600 24px ${F}`; x.fillText('MVR-checked drivers · $1M insured · Photo condition reports',90,fy+166);
+    x.fillStyle='#8C849A'; x.font=`500 19px ${F}`;
+    let dy=fy+204; for(const l of wrap(x,'Non-contract rate. Clients with a signed service agreement are billed at their contract rates. ZIPDRIVE Services may adjust the final price, which is confirmed before dispatch.',900)){x.fillText(l,90,dy);dy+=24}
+    return await new Promise(r=>c.toBlob(r,'image/png'));
+  }
+  $('share-btn').addEventListener('click', async () => {
+    const lbl=$('share-btn-text'); lbl.textContent='Creating…';
+    try{
+      const blob=await buildQuoteImage();
+      const name='ZIPDRIVE_Quote_'+new Date().toISOString().slice(0,10)+'.png';
+      const file=new File([blob],name,{type:'image/png'});
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        await navigator.share({files:[file], title:'ZIPDRIVE Quote'}).catch(()=>{});
+      } else {
+        const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove();
+      }
+      lbl.textContent='Share Quote Image';
+    }catch(e){ lbl.textContent='Could not create image'; setTimeout(()=>lbl.textContent='Share Quote Image',2500); }
+  });
+  window._buildQuoteImage = buildQuoteImage;
 
   // Init
   autoFillTime(95);
