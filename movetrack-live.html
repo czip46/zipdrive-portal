@@ -388,12 +388,8 @@ async function initDispatcher() {
   await loadAllJobs();
 
   // Real-time updates
-  realtimeSub = sb.channel('move_locations')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'move_locations' }, () => {
-      loadDashboard();
-      loadAllJobs();
-    })
-    .subscribe();
+  // Refresh every 15 seconds (positions, pickup times, ETAs)
+  realtimeSub = setInterval(() => { loadDashboard(); loadAllJobs(); }, 15000);
 }
 
 function showTab(name) {
@@ -441,7 +437,8 @@ function renderJobCard(job, isActive) {
         <span class="badge ${isActive ? 'badge-green' : 'badge-amber'}">${isActive ? 'Active' : 'Pending'}</span>
       </div>
       <div class="job-route">📍 ${job.origin || '—'} → ${job.destination || '—'}</div>
-      <div class="job-meta">Driver: ${job.driver_name || 'Unassigned'} ${job.lat ? `· ${job.lat.toFixed(4)}, ${job.lng.toFixed(4)}` : ''} ${job.updated_at ? `· ${timeAgo(job.updated_at)}` : ''}</div>
+      <div class="job-meta">Driver: ${job.driver_name || 'Unassigned'} ${job.updated_at ? `· updated ${timeAgo(job.updated_at)}` : ''}</div>
+      ${job.picked_up_at || etaFor(job) ? `<div class="job-meta" style="color:var(--fg)">${job.picked_up_at ? `✅ Picked up ${clock(job.picked_up_at)}` : ''}${job.picked_up_at && etaFor(job) ? ' · ' : ''}${etaFor(job) ? `🕐 <b style="color:var(--gold)">${etaFor(job).text}</b> <span style="color:var(--fg-muted)">(${etaFor(job).sub})</span>` : ''}</div>` : ''}
       ${mapSrc && isActive ? `<div class="map-wrap"><iframe src="${mapSrc}" title="Map"></iframe></div>` : ''}
       <div class="job-actions">
         <button class="job-btn job-btn-gold" onclick="copyText('${url}')">📋 Client Link</button>
@@ -452,7 +449,7 @@ function renderJobCard(job, isActive) {
 }
 
 async function endJob(jobId) {
-  await fetch(`${API}?job_id=eq.${encodeURIComponent(jobId)}`, {method:'PATCH', headers: HEADERS, body: JSON.stringify({status:'completed'})});
+  await patchJob(`job_id=eq.${encodeURIComponent(jobId)}`, {status:'completed'}, {delivered_at: new Date().toISOString()});
   showToast('Move completed');
   loadDashboard();
   loadAllJobs();
@@ -546,10 +543,7 @@ async function createJob() {
   if (!jobId || !origin) { showToast('Job ID and pick-up address required'); return; }
 
   const token = genToken();
-  const insertResp = await fetch(API, {
-    method: 'POST',
-    headers: HEADERS,
-    body: JSON.stringify({
+  const row = {
       job_id: jobId,
       share_token: token,
       driver_name: driver || 'Unassigned',
@@ -557,8 +551,10 @@ async function createJob() {
       origin: origin,
       destination: dest,
       status: 'pending'
-    })
-  });
+  };
+  const g = await geocode(dest);
+  let insertResp = await fetch(API, {method:'POST', headers:HEADERS, body:JSON.stringify(g ? {...row, dest_lat:g.lat, dest_lng:g.lng} : row)});
+  if (!insertResp.ok && g) insertResp = await fetch(API, {method:'POST', headers:HEADERS, body:JSON.stringify(row)});
 
   if (!insertResp.ok) {
     const errData = await insertResp.json();
@@ -657,8 +653,9 @@ async function startMove() {
   }
 
   // Update status to active
-  await fetch(`${API}?job_id=eq.${encodeURIComponent(driverJobId)}&share_token=eq.${encodeURIComponent(driverToken)}`, {method:'PATCH', headers:HEADERS, body:JSON.stringify({status:'active', driver_name:driverName})});
-  currentJob.status = 'active';
+  const pickedAt = currentJob.picked_up_at || new Date().toISOString();
+  await patchJob(`job_id=eq.${encodeURIComponent(driverJobId)}&share_token=eq.${encodeURIComponent(driverToken)}`, {status:'active', driver_name:driverName}, {picked_up_at: pickedAt});
+  currentJob.status = 'active'; currentJob.picked_up_at = pickedAt;
   renderDriverView();
   beginTracking();
 }
@@ -680,7 +677,9 @@ function beginTracking() {
         mapEl.innerHTML = `<iframe src="${staticMapUrl(lat, lng)}" title="Your location"></iframe>`;
       }
 
-      // Push to Supabase
+      // Push to Supabase (at most every 10 seconds to keep database traffic low)
+      if (Date.now() - (window._lastPush||0) < 10000) return;
+      window._lastPush = Date.now();
       await fetch(`${API}?job_id=eq.${encodeURIComponent(driverJobId)}&share_token=eq.${encodeURIComponent(driverToken)}`, {
         method: 'PATCH', headers: HEADERS,
         body: JSON.stringify({lat, lng, heading: heading||null, speed: speed ? Math.round(speed*2.237) : null, updated_at: new Date().toISOString()})
@@ -700,7 +699,8 @@ async function stopMove() {
     navigator.geolocation.clearWatch(watchId);
     watchId = null;
   }
-  await fetch(`${API}?job_id=eq.${encodeURIComponent(driverJobId)}&share_token=eq.${encodeURIComponent(driverToken)}`, {method:'PATCH', headers:HEADERS, body:JSON.stringify({status:'completed'})});
+  const deliveredAt = new Date().toISOString();
+  await patchJob(`job_id=eq.${encodeURIComponent(driverJobId)}&share_token=eq.${encodeURIComponent(driverToken)}`, {status:'completed'}, {delivered_at: deliveredAt});
   currentJob.status = 'completed';
 
   const app = document.getElementById('app');
@@ -709,7 +709,7 @@ async function stopMove() {
       <div class="empty" style="padding-top:80px">
         <div class="empty-icon">✅</div>
         <div style="font-size:18px;font-weight:700;color:var(--fg);margin-bottom:8px">Move Complete</div>
-        <div>Job ${driverJobId} has been marked as delivered.</div>
+        <div>Job ${driverJobId} has been marked as delivered at ${clock(new Date())}.</div>
       </div>
     </div>`;
 }
@@ -749,6 +749,8 @@ async function renderClientView() {
 
   const isActive = job.status === 'active';
   const isCompleted = job.status === 'completed';
+  if (isActive) await ensureDest(job, `share_token=eq.${encodeURIComponent(trackToken)}`);
+  const eta = etaFor(job);
 
   app.innerHTML = renderTopbar('ZIPDRIVE', 'Live Tracking', isActive) + `
     <div class="screen active" id="client-screen">
@@ -756,7 +758,7 @@ async function renderClientView() {
         <div class="tile" style="background:var(--green-dim);border-color:rgba(46,204,113,0.2)">
           <div class="tile-left">
             <div class="tile-title" style="color:var(--green)">✅ Delivered</div>
-            <div class="tile-sub">Your vehicle has been delivered</div>
+            <div class="tile-sub">Your vehicle was delivered${job.delivered_at ? ' at ' + clock(job.delivered_at) : ''}</div>
           </div>
         </div>` : ''}
       <div class="route-card">
@@ -775,6 +777,12 @@ async function renderClientView() {
           <div class="eta-lbl">${isActive ? 'En Route' : (isCompleted ? 'Done' : 'Pending')}</div>
         </div>
       </div>
+      ${(job.picked_up_at || eta) && !isCompleted ? `
+      <div class="stats" style="grid-template-columns:${job.picked_up_at && eta ? '1fr 1fr' : '1fr'}">
+        ${job.picked_up_at ? `<div class="stat"><div class="stat-num" style="color:var(--green);font-size:22px">${clock(job.picked_up_at)}</div><div class="stat-lbl">Picked up</div></div>` : ''}
+        ${eta ? `<div class="stat"><div class="stat-num" style="color:var(--gold);font-size:22px">${eta.text.replace('ETA ','')}</div><div class="stat-lbl">${eta.text.startsWith('ETA') ? 'Estimated arrival' : ''}</div><div class="stat-lbl" style="margin-top:2px">${eta.sub}</div></div>` : ''}
+      </div>` : ''}
+      ${isCompleted && job.picked_up_at ? `<div class="tile"><div class="tile-left"><div class="tile-title">Picked up ${clock(job.picked_up_at)}${job.delivered_at ? ' · Delivered ' + clock(job.delivered_at) : ''}</div><div class="tile-sub">${job.origin || ''} → ${job.destination || ''}</div></div></div>` : ''}
       <div class="map-wrap" id="client-map">
         ${job.lat && isActive
           ? `<iframe src="${staticMapUrl(job.lat, job.lng)}" title="Vehicle location"></iframe>`
@@ -804,6 +812,44 @@ function updateClientMap(job) {
   }
   // Refresh full view to update status/timestamp
   renderClientView();
+}
+
+// ─── TIMESTAMPS + ETA ──────────────────────────────────────────────────────
+const ETA_MPH = 45, ROAD_FACTOR = 1.25;
+function clock(ts){ return ts ? new Date(ts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : ''; }
+function milesBetween(a,b,c,d){const R=3958.8,r=x=>x*Math.PI/180;const h=Math.sin(r(c-a)/2)**2+Math.cos(r(a))*Math.cos(r(c))*Math.sin(r(d-b)/2)**2;return 2*R*Math.asin(Math.sqrt(h));}
+// Returns {text, sub} for a job, or null when no ETA can be shown
+function etaFor(job){
+  if (job.status !== 'active' || !job.lat || !job.lng || job.dest_lat == null || job.dest_lng == null) return null;
+  const mi = milesBetween(job.lat, job.lng, job.dest_lat, job.dest_lng) * ROAD_FACTOR;
+  if (mi < 0.3) return {text:'Arriving now', sub:'Driver is at the destination'};
+  const mins = Math.max(2, Math.round(mi / ETA_MPH * 60 + 2));
+  const at = new Date(Date.now() + mins*60000);
+  return {text:'ETA ~' + clock(at), sub:'About ' + (mins < 60 ? mins + ' min' : Math.floor(mins/60) + ' hr ' + (mins%60) + ' min') + ' away · ' + mi.toFixed(1) + ' mi'};
+}
+const _geo = {};
+async function geocode(q){
+  if (!q) return null; if (_geo[q] !== undefined) return _geo[q];
+  try{
+    const qq = /\b(oh|ohio)\b/i.test(q) ? q : q + ', Ohio';
+    const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q=' + encodeURIComponent(qq));
+    const j = r.ok ? await r.json() : [];
+    _geo[q] = j[0] ? {lat:+j[0].lat, lng:+j[0].lon} : null;
+  }catch(e){ _geo[q] = null; }
+  return _geo[q];
+}
+// PATCH that still works if the new columns haven't been added in Supabase yet
+async function patchJob(filter, base, extra){
+  const go = body => fetch(`${API}?${filter}`, {method:'PATCH', headers:HEADERS, body:JSON.stringify(body)});
+  if (extra && Object.keys(extra).length){ const r = await go({...base, ...extra}); if (r.ok) return r; }
+  return go(base);
+}
+// Fill in destination coordinates for older jobs created before ETA existed
+async function ensureDest(job, filter){
+  if (!job || job.dest_lat != null || !job.destination || !('dest_lat' in job)) return job;
+  const g = await geocode(job.destination);
+  if (g){ job.dest_lat = g.lat; job.dest_lng = g.lng; patchJob(filter, {dest_lat:g.lat, dest_lng:g.lng}); }
+  return job;
 }
 
 // ─── TIME AGO ─────────────────────────────────────────────────────────────────
