@@ -10,7 +10,7 @@
 <link rel="icon" href="zipdrive-icon.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
 <!-- Supabase JS -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.0/dist/umd/supabase.js"></script>
+<!-- No Supabase library needed - using REST API directly -->
 <style>
 :root {
   --bg: #0a0a0a;
@@ -232,8 +232,57 @@ body{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
 <script>
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const SUPABASE_URL = 'https://gmpzlpgxjwboezvubaka.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_AouNjb7B75WhEQD21HwQig_CfwTWJoQ';
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdtcHpscGd4andib2V6dnViYWthIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5NTE3MjMyMCwiZXhwIjoyMTEwNzQ4MzIwfQ.Wx8uUglFJq4xjFtBGCxCHzDcdEeRMOSgJTBV4u8IIHw';
+const API = `${SUPABASE_URL}/rest/v1/move_locations`;
+const HEADERS = {
+  'Content-Type': 'application/json',
+  'apikey': SUPABASE_KEY,
+  'Authorization': `Bearer ${SUPABASE_KEY}`,
+  'Prefer': 'return=representation'
+};
+
+// REST API helpers
+const sb = {
+  from: (table) => ({
+    select: (cols='*') => ({
+      order: (col, {ascending}={}) => ({
+        then: async (cb) => {
+          const r = await fetch(`${API}?select=${cols}&order=${col}.${ascending?'asc':'desc'}`, {headers: HEADERS});
+          const data = await r.json();
+          cb({data, error: r.ok ? null : data});
+        }
+      }),
+      eq: (col, val) => ({
+        then: async (cb) => {
+          const r = await fetch(`${API}?select=${cols}&${col}=eq.${encodeURIComponent(val)}`, {headers: HEADERS});
+          const data = await r.json();
+          cb({data, error: r.ok ? null : data});
+        }
+      })
+    }),
+    insert: async (row) => {
+      const r = await fetch(API, {method:'POST', headers: HEADERS, body: JSON.stringify(row)});
+      const data = await r.json();
+      return {data, error: r.ok ? null : data};
+    },
+    update: (updates) => ({
+      eq: (col, val) => ({
+        eq: (col2, val2) => ({
+          then: async (cb) => {
+            const r = await fetch(`${API}?${col}=eq.${encodeURIComponent(val)}&${col2}=eq.${encodeURIComponent(val2)}`, {method:'PATCH', headers: HEADERS, body: JSON.stringify(updates)});
+            const data = r.status === 204 ? null : await r.json();
+            if(cb) cb({data, error: r.ok ? null : data});
+          }
+        }),
+        then: async (cb) => {
+          const r = await fetch(`${API}?${col}=eq.${encodeURIComponent(val)}`, {method:'PATCH', headers: HEADERS, body: JSON.stringify(updates)});
+          const data = r.status === 204 ? null : await r.json();
+          if(cb) cb({data, error: r.ok ? null : data});
+        }
+      })
+    })
+  })
+};
 
 // ─── ROLE DETECTION ───────────────────────────────────────────────────────────
 // ?role=dispatcher  → dispatcher view (default, no param)
@@ -359,8 +408,8 @@ async function loadDashboard() {
   const el = document.getElementById('tab-dashboard');
   if (!el) return;
 
-  const { data: jobs } = await sb.from('move_locations').select('*').order('updated_at', { ascending: false });
-  const all = jobs || [];
+  const r1 = await fetch(`${API}?select=*&order=updated_at.desc`, {headers: HEADERS});
+  const all = r1.ok ? await r1.json() : [];
   const active = all.filter(j => j.status === 'active');
   const pending = all.filter(j => j.status === 'pending');
 
@@ -404,7 +453,7 @@ function renderJobCard(job, isActive) {
 }
 
 async function endJob(jobId) {
-  await sb.from('move_locations').update({ status: 'completed' }).eq('job_id', jobId);
+  await fetch(`${API}?job_id=eq.${encodeURIComponent(jobId)}`, {method:'PATCH', headers: HEADERS, body: JSON.stringify({status:'completed'})});
   showToast('Move completed');
   loadDashboard();
   loadAllJobs();
@@ -413,7 +462,8 @@ async function endJob(jobId) {
 async function loadAllJobs() {
   const el = document.getElementById('tab-all-jobs');
   if (!el) return;
-  const { data: jobs } = await sb.from('move_locations').select('*').order('updated_at', { ascending: false });
+  const r2 = await fetch(`${API}?select=*&order=updated_at.desc`, {headers: HEADERS});
+  const jobs = r2.ok ? await r2.json() : [];
   const all = jobs || [];
   if (all.length === 0) {
     el.innerHTML = `<div class="empty"><div class="empty-icon">📋</div>No jobs yet.</div>`;
@@ -479,17 +529,25 @@ async function createJob() {
   if (!jobId || !origin) { showToast('Job ID and pick-up address required'); return; }
 
   const token = genToken();
-  const { error } = await sb.from('move_locations').insert({
-    job_id: jobId,
-    share_token: token,
-    driver_name: driver || 'Unassigned',
-    lat: 40.0853, lng: -83.1162, // Powell, OH default
-    origin: origin,
-    destination: dest,
-    status: 'pending'
+  const insertResp = await fetch(API, {
+    method: 'POST',
+    headers: HEADERS,
+    body: JSON.stringify({
+      job_id: jobId,
+      share_token: token,
+      driver_name: driver || 'Unassigned',
+      lat: 40.0853, lng: -83.1162,
+      origin: origin,
+      destination: dest,
+      status: 'pending'
+    })
   });
 
-  if (error) { showToast('Error creating job: ' + error.message); return; }
+  if (!insertResp.ok) {
+    const errData = await insertResp.json();
+    showToast('Error: ' + (errData.message || errData.hint || insertResp.status));
+    return;
+  }
 
   const clientUrl = shareUrl(token);
   const driverUrl = `${location.origin}${location.pathname}?role=driver&job=${encodeURIComponent(jobId)}&token=${token}&driver=${encodeURIComponent(driver||'Driver')}`;
@@ -518,8 +576,9 @@ async function initDriver() {
   }
 
   // Load job info
-  const { data: jobs } = await sb.from('move_locations').select('*').eq('job_id', driverJobId).eq('share_token', driverToken);
-  currentJob = jobs && jobs[0];
+  const driverResp = await fetch(`${API}?select=*&job_id=eq.${encodeURIComponent(driverJobId)}&share_token=eq.${encodeURIComponent(driverToken)}`, {headers: HEADERS});
+  const driverJobs = driverResp.ok ? await driverResp.json() : [];
+  currentJob = driverJobs[0];
 
   if (!currentJob) {
     app.innerHTML = renderTopbar('MoveTrack', 'Driver') + `
@@ -570,7 +629,7 @@ async function startMove() {
   }
 
   // Update status to active
-  await sb.from('move_locations').update({ status: 'active', driver_name: driverName }).eq('job_id', driverJobId).eq('share_token', driverToken);
+  await fetch(`${API}?job_id=eq.${encodeURIComponent(driverJobId)}&share_token=eq.${encodeURIComponent(driverToken)}`, {method:'PATCH', headers:HEADERS, body:JSON.stringify({status:'active', driver_name:driverName})});
   currentJob.status = 'active';
   renderDriverView();
   beginTracking();
@@ -594,12 +653,10 @@ function beginTracking() {
       }
 
       // Push to Supabase
-      await sb.from('move_locations').update({
-        lat, lng,
-        heading: heading || null,
-        speed: speed ? Math.round(speed * 2.237) : null, // m/s → mph
-        updated_at: new Date().toISOString()
-      }).eq('job_id', driverJobId).eq('share_token', driverToken);
+      await fetch(`${API}?job_id=eq.${encodeURIComponent(driverJobId)}&share_token=eq.${encodeURIComponent(driverToken)}`, {
+        method: 'PATCH', headers: HEADERS,
+        body: JSON.stringify({lat, lng, heading: heading||null, speed: speed ? Math.round(speed*2.237) : null, updated_at: new Date().toISOString()})
+      });
     },
     (err) => {
       const gpsEl = document.getElementById('gps-status');
@@ -615,7 +672,7 @@ async function stopMove() {
     navigator.geolocation.clearWatch(watchId);
     watchId = null;
   }
-  await sb.from('move_locations').update({ status: 'completed' }).eq('job_id', driverJobId).eq('share_token', driverToken);
+  await fetch(`${API}?job_id=eq.${encodeURIComponent(driverJobId)}&share_token=eq.${encodeURIComponent(driverToken)}`, {method:'PATCH', headers:HEADERS, body:JSON.stringify({status:'completed'})});
   currentJob.status = 'completed';
 
   const app = document.getElementById('app');
@@ -641,21 +698,18 @@ async function initClient() {
   // Initial load
   await renderClientView();
 
-  // Real-time updates
-  realtimeSub = sb.channel('client-track')
-    .on('postgres_changes', {
-      event: 'UPDATE', schema: 'public', table: 'move_locations',
-      filter: `share_token=eq.${trackToken}`
-    }, (payload) => {
-      updateClientMap(payload.new);
-    })
-    .subscribe();
+  // Poll for updates every 5 seconds (realtime not needed with direct REST)
+  realtimeSub = setInterval(async () => {
+    const pr = await fetch(`${API}?select=*&share_token=eq.${encodeURIComponent(trackToken)}`, {headers: HEADERS});
+    if (pr.ok) { const rows = await pr.json(); if (rows[0]) updateClientMap(rows[0]); }
+  }, 5000);
 }
 
 async function renderClientView() {
   const app = document.getElementById('app');
-  const { data: jobs } = await sb.from('move_locations').select('*').eq('share_token', trackToken);
-  const job = jobs && jobs[0];
+  const cr = await fetch(`${API}?select=*&share_token=eq.${encodeURIComponent(trackToken)}`, {headers: HEADERS});
+  const rows = cr.ok ? await cr.json() : [];
+  const job = rows[0];
 
   if (!job) {
     app.innerHTML = renderTopbar('ZIPDRIVE', 'Live Tracking') + `
