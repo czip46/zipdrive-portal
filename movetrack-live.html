@@ -7,7 +7,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0a0a0a">
 <title>MoveTrack Live</title>
-<link rel="icon" href="zipdrive-icon.png">
+<link rel="icon" href="zipdrive-mark.png">
+<link rel="apple-touch-icon" href="zipdrive-logo.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
 <!-- Supabase JS -->
 <!-- No Supabase library needed - using REST API directly -->
@@ -45,6 +46,7 @@ body{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   backdrop-filter:blur(12px);
   border-bottom:1px solid var(--border);
 }
+.topbar-logo-img{width:36px;height:36px;border-radius:9px;object-fit:cover;flex-shrink:0;display:block}
 .topbar-logo{
   width:32px;height:32px;border-radius:7px;
   background:linear-gradient(145deg,#3a1d5c,#5b2d8e);
@@ -358,7 +360,7 @@ function initials(name) {
 function renderTopbar(title, sub, showLive = false) {
   return `
     <div class="topbar">
-      <div class="topbar-logo">Z</div>
+      <img class="topbar-logo-img" src="zipdrive-mark.png" alt="ZIPDRIVE">
       <div>
         <div class="topbar-title">${title}</div>
         <div class="topbar-sub">${sub}</div>
@@ -799,6 +801,7 @@ async function renderClientView() {
             <span class="badge badge-green">Open Maps ↗</span>
           </a>
         </div>` : ''}
+      <div style="text-align:center;padding:14px 0 0"><img src="zipdrive-logo.png" alt="ZIPDRIVE Services" style="width:120px;height:120px;border-radius:14px"></div>
       <div style="text-align:center;font-size:11px;color:var(--fg-muted);padding:8px 0">
         ZIPDRIVE Services · 855-ZIP-OHIO · <a href="https://zipdriveservices.com" style="color:var(--gold)">zipdriveservices.com</a>
       </div>
