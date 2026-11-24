@@ -231,6 +231,7 @@ body{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
 
 <div class="toast" id="toast"></div>
 
+<script src="zd-auth.js"></script>
 <script>
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const SUPABASE_URL = 'https://gmpzlpgxjwboezvubaka.supabase.co';
@@ -294,7 +295,8 @@ const role = params.get('role') || (params.get('track') ? 'client' : 'dispatcher
 const trackToken = params.get('track');
 const driverJobId = params.get('job');
 const driverToken = params.get('token');
-const driverName = params.get('driver') || 'Driver';
+let driverName = params.get('driver') || 'Driver';
+let me = null; // signed-in team member {user, profile}
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 let watchId = null;
@@ -367,7 +369,8 @@ function renderTopbar(title, sub, showLive = false) {
       </div>
       <div class="topbar-right">
         ${showLive ? `<div class="live-badge"><span class="live-dot"></span>Live</div>` : ''}
-        ${role === 'dispatcher' ? `<a href="https://claude.ai/artifact/DLfRooQCqEk7FtoHgRPnqv" target="_top" style="font-size:12px;color:var(--fg-muted);text-decoration:none">← Team</a>` : ''}
+        ${me && me.profile.role === 'admin' ? `<a href="https://claude.ai/artifact/DLfRooQCqEk7FtoHgRPnqv" target="_top" style="font-size:12px;color:var(--fg-muted);text-decoration:none">← Team</a>` : ''}
+        ${me ? `<button onclick="ZDAuth.signOut()" style="font-size:12px;color:var(--fg-muted);background:none;border:1px solid #2a2a2a;border-radius:8px;padding:5px 9px;cursor:pointer">Sign out</button>` : ''}
       </div>
     </div>`;
 }
@@ -438,6 +441,7 @@ function renderJobCard(job, isActive) {
         <span class="job-id">${job.job_id}</span>
         <span class="badge ${isActive ? 'badge-green' : 'badge-amber'}">${isActive ? 'Active' : 'Pending'}</span>
       </div>
+      ${job.client_name || job.vehicle ? `<div class="job-meta" style="color:var(--fg)">${[job.client_name, job.vehicle].filter(Boolean).join(' · ')}</div>` : ''}
       <div class="job-route">📍 ${job.origin || '—'} → ${job.destination || '—'}</div>
       <div class="job-meta">Driver: ${job.driver_name || 'Unassigned'} ${job.updated_at ? `· updated ${timeAgo(job.updated_at)}` : ''}</div>
       ${job.picked_up_at || etaFor(job) ? `<div class="job-meta" style="color:var(--fg)">${job.picked_up_at ? `✅ Picked up ${clock(job.picked_up_at)}` : ''}${job.picked_up_at && etaFor(job) ? ' · ' : ''}${etaFor(job) ? `🕐 <b style="color:var(--gold)">${etaFor(job).text}</b> <span style="color:var(--fg-muted)">(${etaFor(job).sub})</span>` : ''}</div>` : ''}
@@ -491,8 +495,12 @@ function renderNewJobForm() {
       <input class="form-input" id="f-jobid" placeholder="e.g. ZD-0003" value="ZD-00${String(Math.floor(Math.random()*900)+100)}">
     </div>
     <div class="form-group">
-      <label class="form-label">Driver Name</label>
-      <input class="form-input" id="f-driver" placeholder="e.g. Brien Naylon">
+      <label class="form-label">Driver</label>
+      <select class="form-input" id="f-driver"><option value="">Loading team…</option></select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Client / dealership</label>
+      <input class="form-input" id="f-client" placeholder="e.g. Ricart Ford">
     </div>
     <div class="form-group">
       <label class="form-label">Pick-up Address</label>
@@ -523,6 +531,10 @@ function renderNewJobForm() {
         <button class="copy-btn" onclick="copyText(document.getElementById('driver-link').textContent)">Copy Link</button>
       </div>
     </div>`;
+  ZDAuth.listTeam().then(team => {
+    const sel = document.getElementById('f-driver'); if (!sel) return;
+    sel.innerHTML = '<option value="">Choose driver</option>' + team.map(t => `<option value="${t.id}">${t.full_name}${t.role==='admin'?' (admin)':''}</option>`).join('');
+  });
 }
 
 let _lastClientPhone = '';
@@ -537,18 +549,25 @@ function textClientLink() {
 
 async function createJob() {
   const jobId = document.getElementById('f-jobid').value.trim();
-  const driver = document.getElementById('f-driver').value.trim();
+  const dSel = document.getElementById('f-driver');
+  const driverId = dSel.value || null;
+  const driver = driverId ? dSel.options[dSel.selectedIndex].text.replace(' (admin)','') : '';
+  const clientName = document.getElementById('f-client').value.trim();
   const origin = document.getElementById('f-origin').value.trim();
   const dest = document.getElementById('f-dest').value.trim();
   const clientPhone = document.getElementById('f-client-phone').value.trim();
 
   if (!jobId || !origin) { showToast('Job ID and pick-up address required'); return; }
+  if (!driverId) { showToast('Choose a driver'); return; }
 
   const token = genToken();
   const row = {
       job_id: jobId,
       share_token: token,
       driver_name: driver || 'Unassigned',
+      driver_id: driverId,
+      client_name: clientName || null,
+      client_phone: clientPhone || null,
       lat: 40.0853, lng: -83.1162,
       origin: origin,
       destination: dest,
@@ -590,10 +609,36 @@ async function createJob() {
 }
 
 // ─── DRIVER VIEW ──────────────────────────────────────────────────────────────
+function driverFilter(){ return `job_id=eq.${encodeURIComponent(driverJobId)}` + (driverToken ? `&share_token=eq.${encodeURIComponent(driverToken)}` : ''); }
+
+// Driver home: list of this driver's own moves (the database only returns their moves)
+async function initDriverHome() {
+  const app = document.getElementById('app');
+  const r = await fetch(`${API}?select=*&order=updated_at.desc`, {headers: HEADERS});
+  const rows = r.ok ? await r.json() : [];
+  const open = rows.filter(j => j.status !== 'completed'), done = rows.filter(j => j.status === 'completed').slice(0, 10);
+  const card = j => {
+    const link = `${location.pathname}?role=driver&job=${encodeURIComponent(j.job_id)}&token=${j.share_token}`;
+    const badge = j.status === 'active' ? 'badge-green' : j.status === 'completed' ? '' : 'badge-amber';
+    return `<div class="job-item">
+      <div class="job-header"><span class="job-id">${j.job_id}</span><span class="badge ${badge}">${j.status === 'active' ? 'Active' : j.status === 'completed' ? 'Delivered' : 'Pending'}</span></div>
+      ${j.client_name || j.vehicle ? `<div class="job-meta" style="color:var(--fg)">${[j.client_name, j.vehicle].filter(Boolean).join(' · ')}</div>` : ''}
+      <div class="job-route">📍 ${j.origin || '—'} → ${j.destination || '—'}</div>
+      ${j.status !== 'completed' ? `<div class="job-actions"><a class="job-btn job-btn-gold" style="text-decoration:none;text-align:center" href="${link}">${j.status === 'active' ? 'Open tracking' : 'Open move'}</a></div>` : `<div class="job-meta">${j.delivered_at ? 'Delivered ' + new Date(j.delivered_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : ''}</div>`}
+    </div>`;
+  };
+  app.innerHTML = renderTopbar('MoveTrack', 'My moves · ' + driverName) + `
+    <div class="screen active">
+      <a class="btn btn-gold" style="text-decoration:none;text-align:center;display:block;margin-bottom:14px" href="ZIPDRIVE_VCR_Tool.html">＋ New move (condition report)</a>
+      <div class="lbl">Open moves</div>
+      ${open.length ? open.map(card).join('') : '<div class="empty"><div class="empty-icon">🚗</div>No open moves.</div>'}
+      ${done.length ? '<div class="lbl" style="margin-top:14px">Recently delivered</div>' + done.map(card).join('') : ''}
+    </div>`;
+}
 async function initDriver() {
   const app = document.getElementById('app');
 
-  if (!driverJobId || !driverToken) {
+  if (!driverJobId) {
     app.innerHTML = renderTopbar('MoveTrack', 'Driver') + `
       <div class="screen active">
         <div class="empty"><div class="empty-icon">❌</div>Invalid driver link.<br>Ask dispatcher for a new link.</div>
@@ -602,7 +647,7 @@ async function initDriver() {
   }
 
   // Load job info
-  const driverResp = await fetch(`${API}?select=*&job_id=eq.${encodeURIComponent(driverJobId)}&share_token=eq.${encodeURIComponent(driverToken)}`, {headers: HEADERS});
+  const driverResp = await fetch(`${API}?select=*&${driverFilter()}`, {headers: HEADERS});
   const driverJobs = driverResp.ok ? await driverResp.json() : [];
   currentJob = driverJobs[0];
 
@@ -656,7 +701,7 @@ async function startMove() {
 
   // Update status to active
   const pickedAt = currentJob.picked_up_at || new Date().toISOString();
-  await patchJob(`job_id=eq.${encodeURIComponent(driverJobId)}&share_token=eq.${encodeURIComponent(driverToken)}`, {status:'active', driver_name:driverName}, {picked_up_at: pickedAt});
+  await patchJob(`${driverFilter()}`, {status:'active', driver_name:driverName}, {picked_up_at: pickedAt});
   currentJob.status = 'active'; currentJob.picked_up_at = pickedAt;
   renderDriverView();
   beginTracking();
@@ -682,7 +727,7 @@ function beginTracking() {
       // Push to Supabase (at most every 10 seconds to keep database traffic low)
       if (Date.now() - (window._lastPush||0) < 10000) return;
       window._lastPush = Date.now();
-      await fetch(`${API}?job_id=eq.${encodeURIComponent(driverJobId)}&share_token=eq.${encodeURIComponent(driverToken)}`, {
+      await fetch(`${API}?${driverFilter()}`, {
         method: 'PATCH', headers: HEADERS,
         body: JSON.stringify({lat, lng, heading: heading||null, speed: speed ? Math.round(speed*2.237) : null, updated_at: new Date().toISOString()})
       });
@@ -702,7 +747,7 @@ async function stopMove() {
     watchId = null;
   }
   const deliveredAt = new Date().toISOString();
-  await patchJob(`job_id=eq.${encodeURIComponent(driverJobId)}&share_token=eq.${encodeURIComponent(driverToken)}`, {status:'completed'}, {delivered_at: deliveredAt});
+  await patchJob(`${driverFilter()}`, {status:'completed'}, {delivered_at: deliveredAt});
   currentJob.status = 'completed';
 
   const app = document.getElementById('app');
@@ -717,6 +762,10 @@ async function stopMove() {
 }
 
 // ─── CLIENT TRACKING VIEW ─────────────────────────────────────────────────────
+async function trackRows() {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/track_move`, {method:'POST', headers: HEADERS, body: JSON.stringify({p_token: trackToken})});
+  return r.ok ? await r.json() : [];
+}
 async function initClient() {
   const app = document.getElementById('app');
 
@@ -730,15 +779,14 @@ async function initClient() {
 
   // Poll for updates every 5 seconds (realtime not needed with direct REST)
   realtimeSub = setInterval(async () => {
-    const pr = await fetch(`${API}?select=*&share_token=eq.${encodeURIComponent(trackToken)}`, {headers: HEADERS});
-    if (pr.ok) { const rows = await pr.json(); if (rows[0]) updateClientMap(rows[0]); }
+    const rows = await trackRows();
+    if (rows[0]) updateClientMap(rows[0]);
   }, 5000);
 }
 
 async function renderClientView() {
   const app = document.getElementById('app');
-  const cr = await fetch(`${API}?select=*&share_token=eq.${encodeURIComponent(trackToken)}`, {headers: HEADERS});
-  const rows = cr.ok ? await cr.json() : [];
+  const rows = await trackRows();
   const job = rows[0];
 
   if (!job) {
@@ -751,7 +799,7 @@ async function renderClientView() {
 
   const isActive = job.status === 'active';
   const isCompleted = job.status === 'completed';
-  if (isActive) await ensureDest(job, `share_token=eq.${encodeURIComponent(trackToken)}`);
+  if (isActive && job.dest_lat == null && job.destination) { const g = await geocode(job.destination); if (g) { job.dest_lat = g.lat; job.dest_lng = g.lng; } }
   const eta = etaFor(job);
 
   app.innerHTML = renderTopbar('ZIPDRIVE', 'Live Tracking', isActive) + `
@@ -866,13 +914,14 @@ function timeAgo(ts) {
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
-if (role === 'driver') {
-  initDriver();
-} else if (role === 'client') {
-  initClient();
-} else {
-  initDispatcher();
-}
+(async () => {
+  if (role === 'client') { initClient(); return; }
+  me = await ZDAuth.require();
+  driverName = me.profile.full_name;
+  if (role === 'driver' && driverJobId) initDriver();
+  else if (me.profile.role === 'admin') initDispatcher();
+  else initDriverHome();
+})();
 </script>
 </body>
 </html>

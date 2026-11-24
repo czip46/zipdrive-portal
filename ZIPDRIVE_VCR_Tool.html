@@ -303,7 +303,7 @@ canvas#sigPad {
 
 <!-- HEADER -->
 <div class="app-header">
-  <div class="app-logo">Z</div>
+  <img src="zipdrive-mark.png" alt="ZIPDRIVE" style="width:42px;height:42px;border-radius:9px;flex-shrink:0;display:block">
   <div class="app-title">
     <h1>Vehicle Condition Report</h1>
     <p>ZIPDRIVE Services — Driver Tool</p>
@@ -449,6 +449,28 @@ canvas#sigPad {
           <option>Other — see notes</option>
         </select>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- MOVETRACK LINK -->
+<div class="section" id="movePanel">
+  <div class="section-hdr gold">
+    <span class="ico">📍</span>
+    <h2 style="color:var(--black);">MOVETRACK</h2>
+  </div>
+  <div class="section-body">
+    <div id="moveNone">
+      <p style="font-size:13px;color:var(--gray);margin:0 0 10px;line-height:1.5">Create this move once. It shows up in MoveTrack as Pending, where you can choose to start live tracking.</p>
+      <button type="button" id="createMoveBtn" onclick="createMove()" style="width:100%;background:#C9A84C;border:none;border-radius:10px;color:#1a1206;font-size:15px;font-weight:800;padding:13px;cursor:pointer;font-family:inherit">Create move in MoveTrack</button>
+    </div>
+    <div id="moveDone" style="display:none">
+      <div style="font-size:14px;font-weight:700;margin-bottom:8px">✓ Move <span id="moveIdTxt"></span> is in MoveTrack</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <a id="moveOpenLink" href="#" style="flex:1;text-align:center;background:#5B2D8E;color:#fff;border-radius:10px;padding:11px;font-weight:700;font-size:13px;text-decoration:none">Open in MoveTrack</a>
+        <button type="button" onclick="copyTrackLink()" style="flex:1;background:#2A1845;border:1.5px solid #C9A84C;color:#C9A84C;border-radius:10px;padding:11px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit">Copy client tracking link</button>
+      </div>
+      <p style="font-size:12px;color:var(--gray);margin:8px 0 0">Submitting this report at drop-off marks the move delivered.</p>
     </div>
   </div>
 </div>
@@ -602,6 +624,98 @@ canvas#sigPad {
   </div>
 </div>
 
+<script src="zd-auth.js"></script>
+<script>
+// ── MOVETRACK CONNECTION ─────────────────────────────────────────────────
+var ZD_API = 'https://gmpzlpgxjwboezvubaka.supabase.co/rest/v1/move_locations';
+var ZD_HDR = {'Content-Type':'application/json','apikey':'sb_publishable_AouNjb7B75WhEQD21HwQig_CfwTWJoQ','Prefer':'return=representation'};
+var zdMe = null, zdMove = null, zdTeam = [];
+function zdVal(id){ var e=document.getElementById(id); return e ? e.value.trim() : ''; }
+function zdJobId(){ var d=new Date(), p=function(n){return String(n).padStart(2,'0')};
+  return 'ZD-' + String(d.getFullYear()).slice(2) + p(d.getMonth()+1) + p(d.getDate()) + '-' + Math.random().toString(36).slice(2,5).toUpperCase(); }
+function zdToken(){ return Math.random().toString(36).slice(2,10) + Math.random().toString(36).slice(2,10); }
+function zdDriver(){ var sel=document.getElementById('driverName');
+  if (zdMe && zdMe.profile.role !== 'admin') return {id: zdMe.user.id, name: zdMe.profile.full_name};
+  var t = zdTeam.find(function(x){ return x.full_name === sel.value; });
+  return t ? {id: t.id, name: t.full_name} : null; }
+function zdVehicle(){ return [zdVal('vYear'), zdVal('vMake'), zdVal('vModel'), zdVal('vColor')].filter(Boolean).join(' '); }
+async function zdGeocode(q){ if(!q) return null; try{ var qq=/\b(oh|ohio)\b/i.test(q)?q:q+', Ohio';
+  var r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q='+encodeURIComponent(qq)); var j=r.ok?await r.json():[];
+  return j[0]?{lat:+j[0].lat,lng:+j[0].lon}:null; }catch(e){ return null; } }
+function zdShowMove(){ if(!zdMove) return;
+  document.getElementById('moveNone').style.display='none'; document.getElementById('moveDone').style.display='block';
+  document.getElementById('moveIdTxt').textContent = zdMove.job_id;
+  document.getElementById('reportNum').textContent = zdMove.job_id;
+  document.getElementById('moveOpenLink').href = 'movetrack-live.html?role=driver&job=' + encodeURIComponent(zdMove.job_id) + '&token=' + zdMove.share_token; }
+function copyTrackLink(){ if(!zdMove) return; var u = location.origin + location.pathname.replace(/[^/]*$/,'') + 'movetrack-live.html?track=' + zdMove.share_token;
+  (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(function(){ alert('Tracking link copied:\n' + u); }).catch(function(){ prompt('Copy this tracking link:', u); }); }
+function zdMoveRow(){
+  var d = zdDriver();
+  return { driver_id: d ? d.id : null, driver_name: d ? d.name : null, client_name: zdVal('clientName') || null, client_phone: zdVal('clientPhone') || null,
+    service: zdVal('jobType') || null, origin: zdVal('pickupLoc') || null, destination: zdVal('delivLoc') || null,
+    vehicle: zdVehicle() || null, plate: zdVal('vPlate') || null, vin: zdVal('vVIN') || null,
+    mileage_in: parseInt(zdVal('mileIn')) || null, mileage_out: parseInt(zdVal('mileOut')) || null };
+}
+async function createMove(){
+  if (zdMove) { zdShowMove(); return; }
+  var d = zdDriver();
+  if (!d) { alert('Please select a driver.'); return; }
+  if (!zdVal('clientName')) { alert('Please enter the client name.'); return; }
+  if (!zdVal('pickupLoc') || !zdVal('delivLoc')) { alert('Please enter the pickup and delivery locations.'); return; }
+  var btn = document.getElementById('createMoveBtn'); btn.disabled = true; btn.textContent = 'Creating…';
+  var row = Object.assign(zdMoveRow(), { job_id: zdJobId(), share_token: zdToken(), status: 'pending', lat: 40.0853, lng: -83.1162 });
+  var g = await zdGeocode(row.destination); if (g) { row.dest_lat = g.lat; row.dest_lng = g.lng; }
+  try {
+    var r = await fetch(ZD_API, {method:'POST', headers: ZD_HDR, body: JSON.stringify(row)});
+    var j = await r.json().catch(function(){ return null; });
+    if (!r.ok) throw new Error((j && (j.message || j.hint)) || ('Error ' + r.status));
+    zdMove = (j && j[0]) || row; zdShowMove();
+  } catch (e) { alert('Could not create the move: ' + e.message); }
+  btn.disabled = false; btn.textContent = 'Create move in MoveTrack';
+}
+function zdVcrData(){
+  var grab = function(items, body){ return items.map(function(it,i){ var st=document.getElementById(body+'_'+i+'_status'), nt=document.getElementById(body+'_'+i+'_note');
+    return {item: it, status: st ? st.value : 'ok', note: nt ? nt.value : ''}; }).filter(function(x){ return x.status !== 'ok' || x.note; }); };
+  return { report_date: document.getElementById('reportDate').textContent, fuel_in: zdVal('fuelIn'), fuel_out: zdVal('fuelOut'), warning_lights: zdVal('warnLights'),
+    pickup_time: zdVal('pickupTime'), return_time: zdVal('returnTime'), exterior: grab(extPanels,'extBody'), interior: grab(intItems,'intBody'), notes: zdVal('driverNotes') };
+}
+// Called by Submit Report: save the condition report and mark the move delivered
+async function zdSaveReport(){
+  var now = new Date().toISOString();
+  var row = Object.assign(zdMoveRow(), { vcr: zdVcrData(), vcr_submitted_at: now, status: 'completed', delivered_at: now });
+  try {
+    if (zdMove) {
+      // Use the latest copy (the driver may have started tracking in MoveTrack since)
+      try { var cur = await fetch(ZD_API + '?select=picked_up_at&job_id=eq.' + encodeURIComponent(zdMove.job_id), {headers: ZD_HDR}); var cj = cur.ok ? await cur.json() : []; if (cj[0]) zdMove.picked_up_at = cj[0].picked_up_at; } catch (e) {}
+      if (zdMove.picked_up_at == null && zdVal('pickupTime')) { var pt = new Date(); var hm = zdVal('pickupTime').split(':'); pt.setHours(+hm[0], +hm[1], 0, 0); row.picked_up_at = pt.toISOString(); }
+      var r = await fetch(ZD_API + '?job_id=eq.' + encodeURIComponent(zdMove.job_id), {method:'PATCH', headers: ZD_HDR, body: JSON.stringify(row)});
+      if (!r.ok) throw new Error('Error ' + r.status);
+    } else {
+      Object.assign(row, { job_id: zdJobId(), share_token: zdToken(), lat: 40.0853, lng: -83.1162 });
+      if (zdVal('pickupTime')) { var pt2 = new Date(); var hm2 = zdVal('pickupTime').split(':'); pt2.setHours(+hm2[0], +hm2[1], 0, 0); row.picked_up_at = pt2.toISOString(); }
+      var r2 = await fetch(ZD_API, {method:'POST', headers: ZD_HDR, body: JSON.stringify(row)});
+      var j2 = await r2.json().catch(function(){ return null; });
+      if (!r2.ok) throw new Error((j2 && j2.message) || ('Error ' + r2.status));
+      zdMove = (j2 && j2[0]) || row; zdShowMove();
+    }
+    return {ok: true, job_id: zdMove.job_id};
+  } catch (e) { return {ok: false, error: e.message}; }
+}
+(async function(){
+  zdMe = await ZDAuth.require();
+  var sel = document.getElementById('driverName');
+  if (zdMe.profile.role === 'admin') {
+    zdTeam = await ZDAuth.listTeam();
+    sel.innerHTML = '<option value="">Select Driver</option>' + zdTeam.map(function(t){ return '<option>' + t.full_name + '</option>'; }).join('');
+    sel.value = zdMe.profile.full_name;
+  } else {
+    sel.innerHTML = '<option>' + zdMe.profile.full_name + '</option>'; sel.value = zdMe.profile.full_name; sel.disabled = true;
+  }
+  var hdr = document.querySelector('.app-header');
+  if (hdr) { var so = document.createElement('button'); so.textContent = 'Sign out'; so.onclick = function(){ ZDAuth.signOut(); };
+    so.style.cssText = 'margin-left:8px;font-size:11px;background:none;border:1px solid #555;color:#ccc;border-radius:7px;padding:4px 8px;cursor:pointer'; hdr.appendChild(so); }
+})();
+</script>
 <script>
 // ── REPORT NUMBER ──────────────────────────────────────────────────────────
 var reportCount = parseInt(localStorage.getItem('zd_report_count') || '847');
@@ -741,7 +855,7 @@ canvas.addEventListener('touchend', function() { drawing=false; });
 function clearSig() { ctx.clearRect(0,0,canvas.width,canvas.height); }
 
 // ── SUBMIT ─────────────────────────────────────────────────────────────────
-function submitReport() {
+async function submitReport() {
   var driver = document.getElementById('driverName').value;
   var client = document.getElementById('clientName').value;
   var year = document.getElementById('vYear').value;
@@ -751,6 +865,11 @@ function submitReport() {
   if (!driver) { alert('Please select a driver.'); return; }
   if (!client) { alert('Please enter the client name.'); return; }
   if (!make || !model) { alert('Please enter vehicle make and model.'); return; }
+
+  var saveBtn = document.querySelector('.btn-submit'); if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+  var saved = await zdSaveReport();
+  if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Submit Report ✓'; }
+  if (!saved.ok && !confirm('Could not save to MoveTrack (' + saved.error + ').\n\nContinue and send the report anyway?')) return;
 
   reportCount++;
   localStorage.setItem('zd_report_count', reportCount);
@@ -803,12 +922,13 @@ function submitReport() {
 
   var sc = document.getElementById('completeScreen');
   document.getElementById('completeVehicle').textContent = year + ' ' + make + ' ' + model + ' — ' + client;
-  document.getElementById('completeId').textContent = 'Report ' + genReportId() + ' saved';
+  document.getElementById('completeId').textContent = saved.ok ? ('Move ' + saved.job_id + ' saved · marked delivered in MoveTrack') : ('Report ' + genReportId() + ' (not saved to MoveTrack)');
   sc.classList.add('show');
 }
 
 function startNew() {
   document.getElementById('completeScreen').classList.remove('show');
+  zdMove = null; document.getElementById('moveNone').style.display='block'; document.getElementById('moveDone').style.display='none';
   clearAll();
   reportCount = parseInt(localStorage.getItem('zd_report_count') || '848');
   document.getElementById('reportNum').textContent = genReportId();
@@ -1051,6 +1171,9 @@ function clearAll() {
   calcMiles();
   clearSig();
   document.getElementById('mileDiff').textContent = '+0 mi';
+  // New report = new move
+  zdMove = null; document.getElementById('moveNone').style.display='block'; document.getElementById('moveDone').style.display='none';
+  if (zdMe) document.getElementById('driverName').value = zdMe.profile.full_name;
 }
 </script>
 </body>
