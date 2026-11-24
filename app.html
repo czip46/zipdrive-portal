@@ -553,7 +553,7 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
         <button class="mini" id="copyReq" type="button">Copy request</button>
         <button class="mini" type="button" data-copy="855-947-6446">Copy number</button>
       </div>
-      <p class="warn" id="outWarn" hidden>We couldn't send it from here. Tap Text or Email above and hit Send, or call us.</p>
+      <p class="warn" id="outWarn" hidden>We couldn't confirm it reached us. To be safe, tap Text above and hit Send, or call us.</p>
       <button class="btn btn-ghost btn-block" type="button" id="newReq" style="margin-top:14px">Start a new request</button>
     </div>
   </section>
@@ -824,13 +824,16 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
     const btn=$('#sendBtn'); btn.disabled=true; btn.textContent='Sending…';
     let ok=false;
     try{
-      const ctl=new AbortController(); const tm=setTimeout(()=>ctl.abort(),12000);
+      const ctl=new AbortController(); const tm=setTimeout(()=>ctl.abort(),25000);
       const body={_subject:subj,_template:'box',_captcha:'false',Service:svc,Company:biz?v('company'):'',Name:v('name'),Phone:v('ph'),Email:v('em'),Request:lines};
       if(v('em')) body._replyto=v('em');
       const r=await fetch(FORM_URL,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(body),signal:ctl.signal});
       clearTimeout(tm);
       const j=await r.json().catch(()=>({}));
-      ok = r.ok && (j.success===true || j.success==='true');
+      // FormSubmit sometimes answers 200 with an odd body even though the email went out.
+      // Treat any 200 as delivered unless it explicitly says the form isn't active.
+      const msg=String(j.message||'').toLowerCase();
+      ok = r.ok && !(String(j.success)==='false' && /activat|not.*(active|verified)/.test(msg));
     }catch(err){ ok=false }
     btn.disabled=false; btn.textContent='Send request';
     const out=$('#out'); out.classList.toggle('ok',ok);
@@ -844,8 +847,8 @@ input::placeholder,textarea::placeholder{color:#6f6880;font-style:italic;opacity
       $('#altLbl').textContent='Need it sooner? Call us'; $('#outWarn').hidden=true;
     } else {
       $('#outEyebrow').textContent='Almost done';
-      $('#outTitle').textContent='Send it to us one more way';
-      $('#outLead').textContent='Your request is ready below.';
+      $('#outTitle').textContent='Please confirm by text';
+      $('#outLead').textContent='Your request may have gone through, but we couldn\'t confirm it. Your request is ready below.';
       $('#altLbl').textContent='Send it to ZIPDRIVE'; $('#outWarn').hidden=false;
     }
     $('#qform').hidden = ok;
